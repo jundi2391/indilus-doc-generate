@@ -26,7 +26,7 @@ import {
   Percent,
   Eye
 } from "lucide-react";
-import { PurchaseOrder, POItem } from "./types";
+import { PurchaseOrder, POItem, BankDetails } from "./types";
 import { defaultPurchaseOrder } from "./defaultData";
 import { generateExcelPO } from "./excelGenerator";
 import { createGoogleSheetsPO } from "./googleSheetsExport";
@@ -336,6 +336,16 @@ export default function App() {
     }));
   };
 
+  const handleBankDetailsChange = (field: keyof BankDetails, value: string) => {
+    setPo(prev => ({
+      ...prev,
+      bankDetails: {
+        ...(prev.bankDetails || { bankName: '', accountNumber: '', accountName: '' }),
+        [field]: value
+      }
+    }));
+  };
+
   // Signee Changes
   const handleSigneeChange = (field: keyof typeof po.signee, value: string) => {
     setPo(prev => ({
@@ -348,7 +358,7 @@ export default function App() {
   };
 
   // Appendix clause management
-  const handleAppendixItemChange = (itemId: string, field: "title" | "content", value: string) => {
+  const handleAppendixItemChange = (itemId: string, field: "title" | "content" | "imageUrl", value: string | undefined) => {
     setPo(prev => ({
       ...prev,
       appendixItems: (prev.appendixItems || []).map(item => {
@@ -358,6 +368,21 @@ export default function App() {
         return item;
       })
     }));
+  };
+
+  const handleAppendixItemImageUpload = (e: React.ChangeEvent<HTMLInputElement>, itemId: string) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        alert("Ukuran gambar maksimal 2MB");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        handleAppendixItemChange(itemId, "imageUrl", reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const addAppendixItem = () => {
@@ -513,20 +538,16 @@ export default function App() {
     
     // Clone original element structure
     const clonedNode = originalContainer.cloneNode(true) as HTMLElement;
-    
-    // Force page-specific high fidelity dimension states on the clones
+     // Force page-specific high fidelity dimension states on the clones
     const page1 = clonedNode.querySelector("#printable-po-document") as HTMLElement | null;
     if (page1) {
       page1.style.width = "794px";
-      page1.style.minHeight = "1123px";
-      page1.style.maxHeight = "1118px";
+      page1.style.minHeight = "1120px";
+      page1.style.height = "auto";
       page1.style.padding = "45px";
       page1.style.border = "none";
       page1.style.borderRadius = "0";
       page1.style.boxShadow = "none";
-      page1.style.display = "flex";
-      page1.style.flexDirection = "column";
-      page1.style.justifyContent = "space-between";
       page1.style.boxSizing = "border-box";
       page1.style.backgroundColor = "#ffffff";
     }
@@ -534,15 +555,12 @@ export default function App() {
     const page2 = clonedNode.querySelector("#printable-appendix-document") as HTMLElement | null;
     if (page2) {
       page2.style.width = "794px";
-      page2.style.minHeight = "1123px";
-      page2.style.maxHeight = "1118px";
+      page2.style.minHeight = "1120px";
+      page2.style.height = "auto";
       page2.style.padding = "45px";
       page2.style.border = "none";
       page2.style.borderRadius = "0";
       page2.style.boxShadow = "none";
-      page2.style.display = "flex";
-      page2.style.flexDirection = "column";
-      page2.style.justifyContent = "space-between";
       page2.style.boxSizing = "border-box";
       page2.style.backgroundColor = "#ffffff";
       page2.style.pageBreakBefore = "always";
@@ -560,6 +578,7 @@ export default function App() {
       margin:       0,
       filename:     cleanFileName,
       image:        { type: "jpeg" as const, quality: 1.0 }, // Maximum quality
+      pagebreak:    { mode: ['css', 'legacy'], avoid: '.avoid-break' },
       html2canvas:  { 
         scale: 3, // Premium high-fidelity 3x scale as requested
         useCORS: true, 
@@ -752,34 +771,20 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              Purchase Order
+              PO & Invoice
               <span className="text-xs bg-sky-100 text-sky-800 font-semibold px-2 py-0.5 rounded-full uppercase">Template Builder</span>
             </h1>
-            <p className="text-xs text-slate-500">Sesuaikan data PO dan langsung ekspor ke Google Sheets berformat premium</p>
+            <p className="text-xs text-slate-500">Sesuaikan data dokumen dan langsung ekspor ke PDF secara presisi</p>
           </div>
         </div>
 
-        {/* Master Actions -> Swipeable Horizontal Slider layout on mobile */}
-        <div className="flex flex-nowrap lg:flex-wrap items-center gap-3 overflow-x-auto w-full lg:w-auto pb-3 lg:pb-0 -mx-6 px-6 lg:mx-0 lg:px-0 scrollbar-none snap-x snap-mandatory">
-          {/* Connection Trigger */}
-          <button
-            onClick={() => setShowAuthSettings(!showAuthSettings)}
-            className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-xl transition-all border shrink-0 snap-start ${
-              accessToken 
-                ? "bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100" 
-                : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-            }`}
-          >
-            <Globe className={`w-4 h-4 ${accessToken ? "text-emerald-500" : "text-slate-400"}`} />
-            <span>{accessToken ? "Google Terhubung ✓" : "Koneksi Google Sheets"}</span>
-            <ChevronDown className="w-4 h-4 text-slate-400" />
-          </button>
-
+        {/* Master Actions */}
+        <div className="flex flex-nowrap items-center gap-3 w-full lg:w-auto overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
           {/* Pratinjau PDF */}
           <button 
             onClick={handlePreviewPDF}
             disabled={isExportingPDF}
-            className="flex items-center gap-2 text-sm font-semibold bg-white border border-rose-200 text-rose-700 hover:bg-rose-50/50 px-4 py-2.5 rounded-xl transition-all shadow-sm cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed shrink-0 snap-start"
+            className="flex items-center gap-2 text-sm font-semibold bg-white border border-rose-200 text-rose-700 hover:bg-rose-50/50 px-4 py-2.5 rounded-xl transition-all shadow-sm cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed shrink-0"
           >
             <Eye className={`w-4 h-4 text-rose-500 ${isExportingPDF ? "animate-pulse" : ""}`} />
             <span>{isExportingPDF ? "Mengekspor..." : "Pratinjau PDF (A4)"}</span>
@@ -789,33 +794,10 @@ export default function App() {
           <button 
             onClick={handleDownloadPDF}
             disabled={isExportingPDF}
-            className="flex items-center gap-2 text-sm font-semibold bg-white border border-rose-200 text-rose-700 hover:bg-rose-50/50 px-4 py-2.5 rounded-xl transition-all shadow-sm cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed shrink-0 snap-start"
+            className="flex items-center gap-2 text-sm font-semibold bg-white border border-rose-200 text-rose-700 hover:bg-rose-50/50 px-4 py-2.5 rounded-xl transition-all shadow-sm cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed shrink-0"
           >
             <FileText className={`w-4 h-4 text-rose-500 ${isExportingPDF ? "animate-pulse" : ""}`} />
             <span>{isExportingPDF ? "Mengekspor..." : "Unduh PDF (A4)"}</span>
-          </button>
-
-          {/* Excel Export offline */}
-          <button 
-            onClick={handleExcelExport}
-            className="flex items-center gap-2 text-sm font-semibold bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50/50 px-4 py-2.5 rounded-xl transition-colors shadow-sm shrink-0 snap-start"
-          >
-            <Download className="w-4 h-4" />
-            <span>Unduh Excel (.xlsx)</span>
-          </button>
-
-          {/* Cloud Google Sheets Export */}
-          <button 
-            onClick={handleGoogleSheetsExport}
-            disabled={isExporting}
-            className="flex items-center gap-2 text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 active:bg-indigo-800 px-5 py-2.5 rounded-xl transition-all shadow-md shadow-indigo-100 disabled:opacity-75 disabled:cursor-not-allowed shrink-0 snap-start"
-          >
-            {isExporting ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <FileSpreadsheet className="w-4 h-4" />
-            )}
-            <span>{isExporting ? "Membuat..." : "Ekspor ke Google Sheet"}</span>
           </button>
         </div>
       </header>
@@ -863,123 +845,89 @@ export default function App() {
         
         {/* Left pane: Forms controls / Settings (Lg: 5 columns) */}
         <div className="lg:col-span-5 space-y-6 flex flex-col h-full">
-
-          {/* Google Access Connection Settings Panel */}
-          {showAuthSettings && (
-            <motion.div 
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4"
-            >
-              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                <h3 className="font-bold text-slate-900 flex items-center gap-2 text-sm">
-                  <Settings className="w-4 h-4 text-slate-500" />
-                  Koneksi Google API
-                </h3>
-                <button 
-                  onClick={() => setShowAuthSettings(false)}
-                  className="text-slate-400 hover:text-slate-600 text-xs font-semibold"
-                >
-                  Tutup
-                </button>
-              </div>
-
-              {accessToken ? (
-                <div className="space-y-3">
-                  <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-100 text-xs space-y-1">
-                    <p className="font-semibold flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 block"></span>
-                      Status: Terkoneksi
-                    </p>
-                    <p className="opacity-80">Aplikasi memiliki izin penuh untuk menulis file spreadsheets ke Google Drive Anda.</p>
-                  </div>
-                  
-                  <button
-                    onClick={handleDisconnect}
-                    className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    Putuskan Hubungan Google Drive
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-4 text-xs">
-                  {/* Option 1: Live single sign on setup */}
-                  <div className="space-y-2">
-                    <p className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Opsi 1: Masuk Akun Google (Single Sign-On)</p>
-                    <p className="text-slate-500">Masukkan Client ID Google Project Anda di bawah untuk mengaktifkan OAuth langsung dari browser:</p>
-                    
-                    <div className="space-y-2">
-                      <input
-                        type="text"
-                        placeholder="Google Client ID (contoh: 12345-abc.apps.googleusercontent.com)"
-                        value={clientId}
-                        onChange={(e) => setClientId(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-                      />
-                      <button
-                        onClick={triggerGoogleLogin}
-                        className="w-full bg-slate-900 text-white hover:bg-slate-800 font-semibold py-2 rounded-xl transition-colors shrink-0"
-                      >
-                        Sign in with Google
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="relative flex py-1 items-center">
-                    <div className="flex-grow border-t border-slate-100"></div>
-                    <span className="flex-shrink mx-3 text-slate-300 font-medium text-[10px] uppercase">atau</span>
-                    <div className="flex-grow border-t border-slate-100"></div>
-                  </div>
-
-                  {/* Option 2: Access Token Bypass */}
-                  <div className="space-y-2">
-                    <p className="font-bold text-slate-700 uppercase tracking-wider text-[10px] flex items-center gap-1">
-                      Opsi 2: Bypass Token Google Playground
-                      <span className="text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded font-bold uppercase text-[8px]">Direkomendasikan</span>
-                    </p>
-                    <p className="text-slate-500">
-                      Metode paling instan dan 100% aman tanpa setup Client ID manual. Tempel "Access Token" dari Google OAuth Playground:
-                    </p>
-
-                    <div className="flex gap-2">
-                      <input
-                        type="password"
-                        placeholder="Tempel Google Access Token"
-                        value={tempTokenInput}
-                        onChange={(e) => setTempTokenInput(e.target.value)}
-                        className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-                      />
-                      <button
-                        onClick={handleApplyManualToken}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 rounded-xl transition-colors"
-                      >
-                        Pasang
-                      </button>
-                    </div>
-
-                    {/* Simple toggle instruction */}
-                    <div className="mt-2 bg-slate-50 hover:bg-slate-100 transition-colors p-3 rounded-xl border border-slate-200 text-slate-600 space-y-1.5">
-                      <p className="font-semibold text-slate-700 flex items-center gap-1">
-                        <HelpCircle className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                        Cara cepat mendapatkan token Google (3 Detik):
-                      </p>
-                      <ol className="list-decimal list-inside space-y-1 pl-1 text-[11px] opacity-90">
-                        <li>Buka Google <a href="https://developers.google.com/oauthplayground/" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-medium">OAuth Playground ↗</a></li>
-                        <li>Cari dan centang scope <code className="bg-slate-200/60 px-1 py-0.2 rounded font-mono">../auth/spreadsheets</code> dan <code className="bg-slate-200/60 px-1 py-0.2 rounded font-mono">../auth/drive.file</code></li>
-                        <li>Klik <b>Authorize APIs</b>, login akun Google, lalu klik <b>Exchange authorization code for tokens</b></li>
-                        <li>Salin text <b>Access Token</b> yang muncul di panel samping kiri, lalu tempel di atas!</li>
-                      </ol>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          )}
-
           {/* Standard Form Editor Panels container */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col overflow-hidden">
             
+            {/* Document Type Selector */}
+            <div className="p-3 border-b border-slate-100 bg-white flex justify-between items-center px-4">
+              <span className="text-xs font-bold text-slate-700 tracking-wider">TIPE DOKUMEN:</span>
+              <div className="flex bg-slate-100 p-1 rounded-xl">
+                <button
+                  onClick={() => setPo(prev => {
+                    const nextPo = { 
+                      ...prev, 
+                      documentType: "po" as const,
+                      vendor: defaultPurchaseOrder.vendor
+                    };
+                    if (!prev.notes || prev.notes.length === 0 || prev.notes[0]?.toLowerCase().includes("official proof")) {
+                      nextPo.notes = [
+                        "All Shipments Must Include: a. Invoice, b. Receipt, c. Delivery Order, d. Quality Control",
+                        "We will return the goods if they do not match the order",
+                        "Purchase Order Number must be stated on the Note/Invoice/Receipt",
+                        "If the delivery will be carried out in stages, then Each shipment of goods must be accompanied by a copy of the Purchase Order."
+                      ];
+                    }
+                    return nextPo;
+                  })}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    (!po.documentType || po.documentType === "po") 
+                      ? "bg-white text-indigo-700 shadow-sm" 
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  Purchase Order (PO)
+                </button>
+                <button
+                  onClick={() => setPo(prev => ({ 
+                    ...prev, 
+                    documentType: "invoice",
+                    vendor: {
+                      name: "PT INFINITAS DIGITAL SOLUSI",
+                      address: "Jl. Ring Road Jl. Raya Bubulak No.A-4, RT.01/RW.11, Bubulak, Kec. Bogor Bar., Kota Bogor, Jawa Barat 16115",
+                      attn: "Januar Nurachman",
+                      phone: "+62 895 1556 4608"
+                    }
+                  }))}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    po.documentType === "invoice" 
+                      ? "bg-white text-emerald-700 shadow-sm" 
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  Invoice (Tagihan)
+                </button>
+                <button
+                  onClick={() => setPo(prev => {
+                    const nextPo = { 
+                      ...prev, 
+                      documentType: "delivery_order" as const,
+                      vendor: {
+                        name: "PT INFINITAS DIGITAL SOLUSI",
+                        address: "Jl. Ring Road Jl. Raya Bubulak No.A-4, RT.01/RW.11, Bubulak, Kec. Bogor Bar., Kota Bogor, Jawa Barat 16115",
+                        attn: "Januar Nurachman",
+                        phone: "+62 895 1556 4608"
+                      }
+                    };
+                    if (!prev.notes || prev.notes.length === 0 || prev.notes[0]?.toLowerCase().includes("all shipment") || prev.notes[0]?.toLowerCase().includes("inv")) {
+                      nextPo.notes = [
+                        "This Delivery Order serves as official proof of goods receipt.",
+                        "This Delivery Order is not proof of sale.",
+                        "This Delivery Order will be accompanied by an invoice."
+                      ];
+                    }
+                    return nextPo;
+                  })}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    po.documentType === "delivery_order" 
+                      ? "bg-white text-sky-700 shadow-sm" 
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  Delivery Order (DO)
+                </button>
+              </div>
+            </div>
+
             {/* Tab Swappers */}
             <div className="grid grid-cols-6 border-b border-slate-100 bg-slate-50/50 p-1">
               {[
@@ -1019,51 +967,157 @@ export default function App() {
                   animate={{ opacity: 1, x: 0 }}
                   className="space-y-4"
                 >
-                  <h3 className="text-sm font-bold text-slate-800 border-l-4 border-indigo-500 pl-2">Informasi & Nomor PO</h3>
+                  <h3 className="text-sm font-bold text-slate-800 border-l-4 border-indigo-500 pl-2">
+                    {po.documentType === 'invoice' ? 'Informasi & Nomor Invoice' : po.documentType === 'delivery_order' ? 'Informasi & Nomor DO' : 'Informasi & Nomor PO'}
+                  </h3>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Nomor PO</label>
-                      <input 
-                        type="text" 
-                        value={po.metadata.poNumber}
-                        onChange={(e) => handleMetaChange("poNumber", e.target.value)}
-                        className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
-                      />
-                    </div>
-                    
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Tanggal Terbit</label>
-                      <input 
-                        type="date" 
-                        value={po.metadata.issueDate}
-                        onChange={(e) => handleMetaChange("issueDate", e.target.value)}
-                        className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
-                      />
-                    </div>
-                  </div>
+                  {po.documentType === 'invoice' ? (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Nomor Invoice</label>
+                          <input 
+                            type="text" 
+                            value={po.metadata.invoiceNumber || ""}
+                            onChange={(e) => handleMetaChange("invoiceNumber", e.target.value)}
+                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Tanggal Terbit (Date)</label>
+                          <input 
+                            type="date" 
+                            value={po.metadata.issueDate}
+                            onChange={(e) => handleMetaChange("issueDate", e.target.value)}
+                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+                      </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Tenggat Pembayaran</label>
-                      <input 
-                        type="text" 
-                        value={po.metadata.paymentTerm}
-                        onChange={(e) => handleMetaChange("paymentTerm", e.target.value)}
-                        className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
-                      />
-                    </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Nomor PO (Opsional)</label>
+                          <input 
+                            type="text" 
+                            value={po.metadata.poNumber || ""}
+                            onChange={(e) => handleMetaChange("poNumber", e.target.value)}
+                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Nomor DO (Opsional)</label>
+                          <input 
+                            type="text" 
+                            value={po.metadata.deliveryOrderNumber || ""}
+                            onChange={(e) => handleMetaChange("deliveryOrderNumber", e.target.value)}
+                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+                      </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Price Term (Syarat Harga)</label>
-                      <input 
-                        type="text" 
-                        value={po.metadata.priceTerm}
-                        onChange={(e) => handleMetaChange("priceTerm", e.target.value)}
-                        className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
-                      />
-                    </div>
-                  </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Purchased Payment</label>
+                          <input 
+                            type="text" 
+                            value={po.metadata.paymentTerm || ""}
+                            onChange={(e) => handleMetaChange("paymentTerm", e.target.value)}
+                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Due Dated</label>
+                          <input 
+                            type="text" 
+                            value={po.metadata.dueDate || ""}
+                            onChange={(e) => handleMetaChange("dueDate", e.target.value)}
+                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : po.documentType === 'delivery_order' ? (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Nomor DO</label>
+                          <input 
+                            type="text" 
+                            value={po.metadata.deliveryOrderNumber || ""}
+                            onChange={(e) => handleMetaChange("deliveryOrderNumber", e.target.value)}
+                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Nomor PO (Opsional)</label>
+                          <input 
+                            type="text" 
+                            value={po.metadata.poNumber || ""}
+                            onChange={(e) => handleMetaChange("poNumber", e.target.value)}
+                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Tanggal Terbit (Date)</label>
+                          <input 
+                            type="date" 
+                            value={po.metadata.issueDate}
+                            onChange={(e) => handleMetaChange("issueDate", e.target.value)}
+                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Nomor PO</label>
+                          <input 
+                            type="text" 
+                            value={po.metadata.poNumber}
+                            onChange={(e) => handleMetaChange("poNumber", e.target.value)}
+                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+                        
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Tanggal Terbit</label>
+                          <input 
+                            type="date" 
+                            value={po.metadata.issueDate}
+                            onChange={(e) => handleMetaChange("issueDate", e.target.value)}
+                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Tenggat Pembayaran</label>
+                          <input 
+                            type="text" 
+                            value={po.metadata.paymentTerm}
+                            onChange={(e) => handleMetaChange("paymentTerm", e.target.value)}
+                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Price Term (Syarat Harga)</label>
+                          <input 
+                            type="text" 
+                            value={po.metadata.priceTerm}
+                            onChange={(e) => handleMetaChange("priceTerm", e.target.value)}
+                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </motion.div>
               )}
 
@@ -1101,14 +1155,25 @@ export default function App() {
                         />
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-700 uppercase block">Attention Contact (Attn)</label>
-                        <input 
-                          type="text" 
-                          value={po.vendor.attn}
-                          onChange={(e) => handleClientChange("vendor", "attn", e.target.value)}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                        />
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-700 uppercase block">Attention Contact (Attn)</label>
+                          <input 
+                            type="text" 
+                            value={po.vendor.attn}
+                            onChange={(e) => handleClientChange("vendor", "attn", e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-700 uppercase block">Nomor Telepon (Opsional)</label>
+                          <input 
+                            type="text" 
+                            value={po.vendor.phone || ""}
+                            onChange={(e) => handleClientChange("vendor", "phone", e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1235,20 +1300,46 @@ export default function App() {
                           </div>
 
                           <div className="col-span-5 space-y-1">
-                            <label className="text-[9px] text-slate-500 font-medium block">Harga Satuan (Rp)</label>
-                            <input 
-                              type="number" 
-                              value={item.price}
-                              onChange={(e) => handleItemPropertyChange(item.id, "price", parseFloat(e.target.value) || 0)}
-                              className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-right bg-white"
-                            />
+                            {po.documentType === 'delivery_order' ? (
+                              <>
+                                <label className="text-[9px] text-slate-500 font-medium block">Information</label>
+                                <input 
+                                  type="text" 
+                                  value={item.information || ""}
+                                  onChange={(e) => handleItemPropertyChange(item.id, "information", e.target.value)}
+                                  className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-left bg-white"
+                                />
+                              </>
+                            ) : (
+                              <>
+                                <label className="text-[9px] text-slate-500 font-medium block">Harga Satuan (Rp)</label>
+                                <input 
+                                  type="number" 
+                                  value={item.price}
+                                  onChange={(e) => handleItemPropertyChange(item.id, "price", parseFloat(e.target.value) || 0)}
+                                  className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-right bg-white"
+                                />
+                              </>
+                            )}
                           </div>
                         </div>
 
-                        <div className="flex justify-between items-center text-[10px] text-slate-500 bg-slate-100 rounded-lg px-2.5 py-1 pt-1.5">
-                          <span>Subtotal:</span>
-                          <span className="font-mono font-bold text-slate-700">{formatIDR(item.qty * item.price)}</span>
-                        </div>
+                        {po.documentType === 'delivery_order' ? (
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-medium block">Keterangan</label>
+                            <input 
+                              type="text" 
+                              value={item.keterangan || ""}
+                              onChange={(e) => handleItemPropertyChange(item.id, "keterangan", e.target.value)}
+                              className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-left bg-white"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex justify-between items-center text-[10px] text-slate-500 bg-slate-100 rounded-lg px-2.5 py-1 pt-1.5">
+                            <span>Subtotal:</span>
+                            <span className="font-mono font-bold text-slate-700">{formatIDR(item.qty * item.price)}</span>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1316,39 +1407,79 @@ export default function App() {
                   animate={{ opacity: 1, x: 0 }}
                   className="space-y-6"
                 >
-                  {/* Notes Terms */}
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-sm font-bold text-slate-800 border-l-4 border-indigo-500 pl-2">Syarat & Ketentuan (Note)</h3>
-                      <button
-                        onClick={addNoteLine}
-                        className="flex items-center gap-0.5 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-slate-100 px-2 py-1 rounded"
-                      >
-                        <Plus className="w-3 h-3" /> Tambah Note
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      {po.notes.map((noteText, idx) => (
-                        <div key={idx} className="flex gap-2 items-start">
-                          <span className="text-xs text-slate-400 mt-2 font-mono">{idx + 1}.</span>
-                          <textarea
-                            rows={2}
-                            value={noteText}
-                            onChange={(e) => handleNoteChange(idx, e.target.value)}
-                            className="flex-1 px-3 py-1.5 border border-slate-200 rounded-xl text-xs bg-white resize-none"
+                  {po.documentType === 'invoice' ? (
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-bold text-emerald-700 flex items-center gap-1.5 pl-2 border-l-4 border-emerald-500">
+                        Informasi Rekening Bank
+                      </h3>
+                      
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-700 uppercase block">Nama Bank</label>
+                          <input 
+                            type="text" 
+                            value={po.bankDetails?.bankName || ""}
+                            onChange={(e) => handleBankDetailsChange("bankName", e.target.value)}
+                            placeholder="Contoh: BCA / Mandiri / BNI"
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
                           />
-                          <button
-                            onClick={() => removeNoteLine(idx)}
-                            className="text-slate-300 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors mt-1 shrink-0"
-                            title="Hapus note"
-                          >
-                            <Trash className="w-3.5 h-3.5" />
-                          </button>
                         </div>
-                      ))}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-700 uppercase block">Nomor Rekening</label>
+                          <input 
+                            type="text" 
+                            value={po.bankDetails?.accountNumber || ""}
+                            onChange={(e) => handleBankDetailsChange("accountNumber", e.target.value)}
+                            placeholder="Contoh: 1234567890"
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-mono"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-700 uppercase block">Nama Rekening</label>
+                          <input 
+                            type="text" 
+                            value={po.bankDetails?.accountName || ""}
+                            onChange={(e) => handleBankDetailsChange("accountName", e.target.value)}
+                            placeholder="Contoh: PT ABC MAJU"
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
+                          />
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <h3 className="text-sm font-bold text-slate-800 border-l-4 border-indigo-500 pl-2">Syarat & Ketentuan (Note)</h3>
+                        <button
+                          onClick={addNoteLine}
+                          className="flex items-center gap-0.5 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-slate-100 px-2 py-1 rounded"
+                        >
+                          <Plus className="w-3 h-3" /> Tambah Note
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+                        {po.notes.map((noteText, idx) => (
+                          <div key={idx} className="flex gap-2 items-start">
+                            <span className="text-xs text-slate-400 mt-2 font-mono">{idx + 1}.</span>
+                            <textarea
+                              rows={2}
+                              value={noteText}
+                              onChange={(e) => handleNoteChange(idx, e.target.value)}
+                              className="flex-1 px-3 py-1.5 border border-slate-200 rounded-xl text-xs bg-white resize-none"
+                            />
+                            <button
+                              onClick={() => removeNoteLine(idx)}
+                              className="text-slate-300 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors mt-1 shrink-0"
+                              title="Hapus note"
+                            >
+                              <Trash className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Signee Authorized */}
                   <div className="space-y-4 pt-4 border-t border-slate-100">
@@ -1471,6 +1602,32 @@ export default function App() {
                                   onChange={(e) => handleAppendixItemChange(item.id, "content", e.target.value)}
                                   className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs bg-white resize-y"
                                 />
+                              </div>
+
+                              <div className="space-y-1 pt-1">
+                                <label className="text-[9px] text-slate-500 font-medium block">Gambar / Lampiran Visual (Opsional)</label>
+                                {item.imageUrl ? (
+                                  <div className="relative inline-block mt-1">
+                                    <img src={item.imageUrl} alt={`Lampiran ${idx + 1}`} className="h-20 w-auto rounded border border-slate-200 object-contain bg-white p-1" />
+                                    <button 
+                                      onClick={() => handleAppendixItemChange(item.id, "imageUrl", undefined)}
+                                      className="absolute -top-1.5 -right-1.5 bg-red-500 text-white hover:bg-red-600 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm"
+                                      title="Hapus gambar"
+                                    >
+                                      &times;
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <label className="inline-flex items-center gap-1.5 cursor-pointer bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-[10px] font-semibold px-3 py-1.5 rounded-lg transition-colors shadow-sm mt-1">
+                                    <Upload className="w-3 h-3" /> Unggah Gambar
+                                    <input 
+                                      type="file" 
+                                      accept="image/*" 
+                                      onChange={(e) => handleAppendixItemImageUpload(e, item.id)} 
+                                      className="hidden" 
+                                    />
+                                  </label>
+                                )}
                               </div>
                             </div>
                           ))}
@@ -1812,37 +1969,6 @@ export default function App() {
 
             </div>
 
-            {/* Bottom Status Panel Indicator */}
-            {generatedSheet && (
-              <div className="p-4 bg-emerald-50 border-t border-emerald-100 flex flex-col gap-2">
-                <p className="text-xs text-emerald-800 font-semibold flex items-center gap-1.5">
-                  <CheckCircle className="w-4 h-4 text-emerald-600 animate-bounce" />
-                  Berhasil dibuat Google Sheets!
-                </p>
-                <a
-                  href={generatedSheet.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full text-center bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs py-2 px-3 rounded-xl shadow-sm hover:shadow transition-all inline-flex items-center justify-center gap-1.5"
-                >
-                  Buka Spredsheet Baru ↗
-                </a>
-              </div>
-            )}
-
-            {exportError && (
-              <div className="p-4 bg-red-50 border-t border-red-100 text-xs text-red-800 space-y-1">
-                <p className="font-semibold">Ekspor Google Sheets Gagal</p>
-                <p className="opacity-95 leading-relaxed">{exportError}</p>
-                <button 
-                  onClick={() => setShowAuthSettings(true)}
-                  className="text-indigo-600 hover:underline font-bold"
-                >
-                  Perlu masuk akun kembali? Klik di sini ↗
-                </button>
-              </div>
-            )}
-
           </div>
 
         </div>
@@ -1860,12 +1986,12 @@ export default function App() {
           </div>
 
           {/* Download wrapper containing Page 1 (and optionally Page 2) */}
-          <div id="po-download-wrapper" className="w-[794px] shrink-0 flex flex-col items-center gap-6">
+          <div id="po-download-wrapper" className={`w-[794px] shrink-0 flex flex-col items-center ${isExportingPDF ? 'gap-0' : 'gap-6'}`}>
 
             {/* Live Document Canvas */}
             <div 
               id="printable-po-document" 
-              className={`bg-white justify-between relative shrink-0 flex flex-col w-[794px] min-h-[1123px] p-8 ${
+              className={`bg-white justify-between relative shrink-0 flex flex-col w-[794px] min-h-[1120px] pb-12 pt-8 px-8 ${
                 isExportingPDF 
                   ? "border-none shadow-none rounded-none" 
                   : "shadow-lg rounded-xl border border-slate-200"
@@ -1878,81 +2004,124 @@ export default function App() {
                 
                 {/* Brand Visual logo matching indilus / kustom with brand name text */}
                 <div className="flex items-center gap-4">
-                  <div className="relative shrink-0 flex items-center justify-center p-2 rounded-xl bg-slate-50 border border-slate-100">
+                  <div className="relative shrink-0 flex items-center justify-center">
                     {po.logoType === "uploaded" && po.logoImage ? (
                       <img 
                         src={po.logoImage} 
                         alt={po.company.brand} 
-                        className="h-14 max-w-[140px] max-h-14 object-contain" 
+                        className="max-w-[280px] max-h-24 w-auto object-contain" 
                       />
                     ) : (
-                      /* Minimal SVG infinity loop representing the 'indilus' logo from the PDF */
-                      <svg className="w-14 h-14" viewBox="0 0 100 50">
-                        <path 
-                          d="M25,25 C25,35 35,42 45,35 C55,28 65,15 75,25 C85,35 75,42 65,35 C55,28 45,15 25,25 Z" 
-                          fill="none" 
-                          stroke="#0F5CA3" 
-                          strokeWidth="8" 
-                          strokeLinecap="round"
-                        />
-                        <circle cx="21" cy="24" r="5" fill="#38BDF8" />
-                      </svg>
+                      <div className="flex items-center gap-4">
+                        <div className="relative shrink-0 flex items-center justify-center p-2 rounded-xl bg-slate-50 border border-slate-100">
+                          <svg className="w-14 h-14" viewBox="0 0 100 50">
+                            <path 
+                              d="M25,25 C25,35 35,42 45,35 C55,28 65,15 75,25 C85,35 75,42 65,35 C55,28 45,15 25,25 Z" 
+                              fill="none" 
+                              stroke="#0F5CA3" 
+                              strokeWidth="8" 
+                              strokeLinecap="round"
+                            />
+                            <circle cx="21" cy="24" r="5" fill="#38BDF8" />
+                          </svg>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-base font-black text-slate-900 leading-tight tracking-tight uppercase">
+                            {po.company.name || "PT INFINITAS DIGITAL SOLUSI"}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-none mt-0.5">
+                            {po.company.subTitle || "INFINITAS DIGITAL SOLUSI"}
+                          </span>
+                          <span className="text-[9px] text-[#0F5CA3] font-medium leading-none mt-1.5 opacity-90">
+                            Standard Quality & Digital Integration Vendor
+                          </span>
+                        </div>
+                      </div>
                     )}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-base font-black text-slate-900 leading-tight tracking-tight uppercase">
-                      {po.company.name || "PT INFINITAS DIGITAL SOLUSI"}
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-none mt-0.5">
-                      {po.company.subTitle || "INFINITAS DIGITAL SOLUSI"}
-                    </span>
-                    <span className="text-[9px] text-[#0F5CA3] font-medium leading-none mt-1.5 opacity-90">
-                      Standard Quality & Digital Integration Vendor
-                    </span>
                   </div>
                 </div>
 
                 {/* Right text details */}
                 <div className="text-right">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#1E40AF] block">
-                    Purchase Order
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#1E40AF] block mb-1">
+                    {po.documentType === 'invoice' ? 'INVOICE' : po.documentType === 'delivery_order' ? 'DELIVERY ORDER' : 'Purchase Order'}
                   </span>
-                  <span className="text-sm font-black font-mono text-slate-800 block mt-1">
-                    {po.metadata.poNumber || "-"}
-                  </span>
-                  <span className="text-[10px] text-slate-500 block mt-0.5">
-                    Issued: {new Date(po.metadata.issueDate).toLocaleDateString("id-ID", { year: 'numeric', month: 'long', day: 'numeric' })}
-                  </span>
+                  
+                  {po.documentType === 'invoice' ? (
+                    <div className="space-y-0.5 text-xs text-slate-700 pt-1">
+                      <div className="flex justify-end gap-2 items-center">
+                        <span className="font-semibold text-slate-500 uppercase text-[9px] tracking-wider">No. Invoice</span>
+                        <span className="font-black font-mono bg-indigo-50 px-1.5 py-0.5 rounded text-indigo-900 border border-indigo-100">{po.metadata.invoiceNumber || "-"}</span>
+                      </div>
+                      <div className="flex justify-end gap-2 items-center">
+                        <span className="font-semibold text-slate-500 uppercase text-[9px] tracking-wider">No. PO</span>
+                        <span className="font-medium font-mono">{po.metadata.poNumber || "-"}</span>
+                      </div>
+                      <div className="flex justify-end gap-2 items-center">
+                        <span className="font-semibold text-slate-500 uppercase text-[9px] tracking-wider">No. DO</span>
+                        <span className="font-medium font-mono">{po.metadata.deliveryOrderNumber || "-"}</span>
+                      </div>
+                      <div className="flex justify-end gap-2 items-center mt-1 pt-1 border-t border-slate-50/50">
+                        <span className="font-semibold text-slate-500 uppercase text-[9px] tracking-wider">Date</span>
+                        <span className="font-medium text-[10px]">{new Date(po.metadata.issueDate).toLocaleDateString("id-ID", { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                      </div>
+                    </div>
+                  ) : po.documentType === 'delivery_order' ? (
+                    <div className="space-y-0.5 text-xs text-slate-700 pt-1">
+                      <div className="flex justify-end gap-2 items-center">
+                        <span className="font-semibold text-slate-500 uppercase text-[9px] tracking-wider">No. DO</span>
+                        <span className="font-black font-mono bg-indigo-50 px-1.5 py-0.5 rounded text-indigo-900 border border-indigo-100">{po.metadata.deliveryOrderNumber || "-"}</span>
+                      </div>
+                      <div className="flex justify-end gap-2 items-center">
+                        <span className="font-semibold text-slate-500 uppercase text-[9px] tracking-wider">No. PO</span>
+                        <span className="font-medium font-mono">{po.metadata.poNumber || "-"}</span>
+                      </div>
+                      <div className="flex justify-end gap-2 items-center mt-1 pt-1 border-t border-slate-50/50">
+                        <span className="font-semibold text-slate-500 uppercase text-[9px] tracking-wider">Date</span>
+                        <span className="font-medium text-[10px]">{new Date(po.metadata.issueDate).toLocaleDateString("id-ID", { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="text-sm font-black font-mono text-slate-800 block mt-1">
+                        {po.metadata.poNumber || "-"}
+                      </span>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">
+                        Issued: {new Date(po.metadata.issueDate).toLocaleDateString("id-ID", { year: 'numeric', month: 'long', day: 'numeric' })}
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
 
               {/* CARD INFO SEGMENTS */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-row gap-4 w-full justify-between items-stretch">
                 
                 {/* VENDOR BOX CARDS */}
-                <div className="bg-sky-50/30 border border-slate-200/80 rounded-xl overflow-hidden shadow-sm">
-                  <div className="bg-sky-50 border-b border-slate-200 px-4 py-2.5 flex items-center gap-1.5 text-[#0284C7] font-extrabold text-xs">
-                    <CheckCircle className="w-4 h-4" /> VENDOR
+                <div className="w-[48%] bg-sky-50/30 border border-slate-200/80 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                  <div className="bg-sky-50 border-b border-slate-200 px-4 py-2.5 flex items-center justify-start gap-1.5 text-[#0284C7] font-black text-xs tracking-wide">
+                    <CheckCircle className="w-[18px] h-[18px] flex-shrink-0 stroke-[2.5]" /> <span>{po.documentType === 'invoice' || po.documentType === 'delivery_order' ? 'FROM' : 'VENDOR'}</span>
                   </div>
-                  <div className="p-4 space-y-2 min-h-[140px]">
+                  <div className="p-4 space-y-2 flex-grow min-h-[140px]">
                     <h4 className="text-xs font-bold text-slate-900 leading-tight">
                       {po.vendor.name || "[Nama Vendor Kosong]"}
                     </h4>
                     <p className="text-[11px] text-slate-600 leading-relaxed font-normal">
                       {po.vendor.address || "[Alamat Vendor Kosong]"}
                     </p>
-                    <p className="text-[11px] text-slate-500 pt-1 flex items-center gap-1">
-                      <span className="font-semibold text-slate-700">Attn:</span> {po.vendor.attn || "-"}
-                    </p>
+                    <div className="pt-1.5 text-[11px] text-slate-500 space-y-0.5">
+                      <p><span className="font-semibold text-slate-700">Attn:</span> {po.vendor.attn || "-"}</p>
+                      <p className="flex items-center gap-1"><span className="font-semibold text-slate-700">Phone:</span> {po.vendor.phone || "-"}</p>
+                    </div>
                   </div>
                 </div>
 
                 {/* SENT TO BOX CARDS */}
-                <div className="bg-indigo-900/5 text-slate-900 hover:shadow transition-shadow border border-indigo-200/80 rounded-xl overflow-hidden shadow-sm">
-                  <div className="bg-[#1E40AF] text-white border-b border-indigo-900/20 px-4 py-2.5 flex items-center gap-1.5 font-extrabold text-xs">
-                    <CheckCircle className="w-4 h-4 text-emerald-300" /> SENT TO
+                <div className="w-[48%] bg-indigo-900/5 text-slate-900 hover:shadow transition-shadow border border-indigo-200/80 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                  <div className="bg-[#1E40AF] text-white border-b border-indigo-900/20 px-4 py-2.5 flex items-center justify-start gap-1.5 font-black text-xs tracking-wide">
+                    <CheckCircle className="w-[18px] h-[18px] text-emerald-300 flex-shrink-0 stroke-[2.5]" /> <span>{po.documentType === 'invoice' ? 'BILLED TO' : 'SENT TO'}</span>
                   </div>
-                  <div className="p-4 space-y-2 min-h-[140px]">
+                  <div className="p-4 space-y-2 flex-grow min-h-[140px]">
                     <h4 className="text-xs font-bold text-slate-900 leading-tight">
                       {po.shipping.name || "[Nama Penerima Kosong]"}
                     </h4>
@@ -1969,20 +2138,32 @@ export default function App() {
               </div>
 
               {/* CONTRACT CO METADATA STRIP */}
-              <div className="bg-slate-100 border border-slate-200 p-4 rounded-xl grid grid-cols-3 gap-2 text-center shadow-inner">
-                <div className="space-y-0.5">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Purchase Order No</span>
-                  <span className="text-xs font-extrabold text-slate-800 font-mono block">{po.metadata.poNumber || "-"}</span>
+              {po.documentType !== 'delivery_order' && (
+                <div className="w-full mb-6">
+                  <div className="bg-slate-50 flex flex-row rounded-xl overflow-hidden">
+                    <div className="flex-1 py-4 px-4 text-center">
+                      <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
+                        {po.documentType === 'invoice' ? 'Nomor Invoice' : 'Purchase Order No'}
+                      </div>
+                      <div className="text-xs font-black text-slate-700 font-mono tracking-wide">
+                        {po.documentType === 'invoice' ? (po.metadata.invoiceNumber || "-") : (po.metadata.poNumber || "-")}
+                      </div>
+                    </div>
+                    <div className="flex-1 py-4 px-4 text-center">
+                      <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Purchased Payment</div>
+                      <div className="text-xs font-bold text-slate-800">{po.metadata.paymentTerm || "-"}</div>
+                    </div>
+                    <div className="flex-1 py-4 px-4 text-center">
+                      <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">
+                        {po.documentType === 'invoice' ? 'Due Dated' : 'Price Term'}
+                      </div>
+                      <div className="text-xs font-bold text-slate-800">
+                        {po.documentType === 'invoice' ? (po.metadata.dueDate || "-") : (po.metadata.priceTerm || "-")}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-0.5 border-x border-slate-200/80">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Purchased Payment</span>
-                  <span className="text-xs font-extrabold text-slate-800 block">{po.metadata.paymentTerm || "-"}</span>
-                </div>
-                <div className="space-y-0.5">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Price Term</span>
-                  <span className="text-xs font-extrabold text-slate-800 block">{po.metadata.priceTerm || "-"}</span>
-                </div>
-              </div>
+              )}
 
               {/* GRID TABLE CONSOLE */}
               <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
@@ -1992,8 +2173,12 @@ export default function App() {
                       <th className="py-2.5 px-4 font-bold text-slate-500 uppercase">Description</th>
                       <th className="py-2.5 px-3 font-bold text-slate-500 uppercase text-right w-[80px]">Qty</th>
                       <th className="py-2.5 px-3 font-bold text-slate-500 uppercase text-center w-[80px]">Unit</th>
-                      <th className="py-2.5 px-3 font-bold text-slate-500 uppercase text-right w-[110px]">Price</th>
-                      <th className="py-2.5 px-4 font-bold text-slate-500 uppercase text-right w-[130px]">Total</th>
+                      <th className="py-2.5 px-3 font-bold text-slate-500 uppercase text-right w-[110px]">
+                        {po.documentType === 'delivery_order' ? 'Information' : 'Price'}
+                      </th>
+                      <th className="py-2.5 px-4 font-bold text-slate-500 uppercase text-right w-[130px]">
+                        {po.documentType === 'delivery_order' ? 'Keterangan' : 'Total'}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2014,10 +2199,10 @@ export default function App() {
                           {item.unit || "Pcs"}
                         </td>
                         <td className="py-3 px-3 text-slate-700 text-right font-mono">
-                          {formatIDR(item.price || 0)}
+                          {po.documentType === 'delivery_order' ? (item.information || "-") : formatIDR(item.price || 0)}
                         </td>
                         <td className="py-3 px-4 text-slate-800 text-right font-mono font-bold">
-                          {formatIDR(item.qty * item.price)}
+                          {po.documentType === 'delivery_order' ? (item.keterangan || "-") : formatIDR(item.qty * item.price)}
                         </td>
                       </tr>
                     ))}
@@ -2026,134 +2211,319 @@ export default function App() {
               </div>
 
               {/* TOTAL AMOUNT CONTAINER BOX (align right) */}
-              <div className="flex justify-end pt-4">
-                <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl text-right max-w-xs w-full shadow-sm flex flex-col gap-1.5 text-xs font-sans">
-                  <div className="flex justify-between items-center text-slate-500">
-                    <span>Sub-Total:</span>
-                    <span className="font-mono font-medium">{formatIDR(calculateSubtotal())}</span>
-                  </div>
-
-                  {po.ppnEnabled && (
+              {po.documentType !== 'delivery_order' && (
+                <div className="flex justify-end pt-4">
+                  <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl text-right max-w-xs w-full shadow-sm flex flex-col gap-1.5 text-xs font-sans">
                     <div className="flex justify-between items-center text-slate-500">
-                      <span>PPN ({po.ppnPercent ?? 11}%):</span>
-                      <span className="font-mono font-medium">{formatIDR(calculatePPN())}</span>
+                      <span>Sub-Total:</span>
+                      <span className="font-mono font-medium">{formatIDR(calculateSubtotal())}</span>
                     </div>
-                  )}
 
-                  <div className="border-t border-slate-200 my-1 pt-1.5 flex justify-between items-center font-bold text-slate-800">
-                    <span className="text-[10px] tracking-wide uppercase font-extrabold text-[#0F5CA3]">Total Amount:</span>
-                    <span className="font-mono text-lg text-[#1E40AF]">
-                      {formatIDR(calculateTotal())}
-                    </span>
+                    {po.ppnEnabled && (
+                      <div className="flex justify-between items-center text-slate-500">
+                        <span>PPN ({po.ppnPercent ?? 11}%):</span>
+                        <span className="font-mono font-medium">{formatIDR(calculatePPN())}</span>
+                      </div>
+                    )}
+
+                    <div className="border-t border-slate-200 my-1 pt-1.5 flex justify-between items-center font-bold text-slate-800">
+                      <span className="text-[10px] tracking-wide uppercase font-extrabold text-[#0F5CA3]">Total Amount:</span>
+                      <span className="font-mono text-lg text-[#1E40AF]">
+                        {formatIDR(calculateTotal())}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
             </div>
 
             {/* LOWER TERMS NOTES AND SIGNATURE */}
-            <div className="grid grid-cols-12 gap-6 border-t border-slate-100 pt-8 mt-12 mb-2 items-start w-full">
-              
-              {/* Note (col-span-7) */}
-              <div className="col-span-7 space-y-3 font-normal">
-                <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wide block">Note / Terms:</span>
-                <ol className="text-[11px] text-slate-500 space-y-1.5 pl-3 list-decimal leading-relaxed">
-                  {po.notes.map((noteLine, idx) => (
-                    <li key={idx} className="opacity-90">{noteLine}</li>
-                  ))}
-                </ol>
-              </div>
-
-              {/* Signee (col-span-5) */}
-              <div className="col-span-5 text-center flex flex-col justify-between h-full min-h-[160px]">
-                <div>
-                  <span className="text-[10px] font-bold text-slate-400 tracking-wider block uppercase">Authorized Signature</span>
-                  <span className="text-xs font-bold text-slate-800 block mt-1 uppercase">{po.signee.company || "PT INFINITAS DIGITAL SOLUSI"}</span>
+            {po.documentType === 'delivery_order' ? (
+              <div className="flex flex-col border-t border-slate-100 pt-8 mt-12 mb-8 pb-4 items-start w-full gap-8 break-inside-avoid avoid-break">
+                {/* Note */}
+                <div className="w-full space-y-3 font-normal">
+                  <span className="text-[10px] font-extrabold text-[#1E40AF] tracking-wider block uppercase">Note:</span>
+                  <div className="text-[11px] text-slate-500 space-y-1.5 leading-relaxed">
+                    {po.notes && po.notes.length > 0 ? (
+                      po.notes.map((noteText, idx) => (
+                        <div key={idx} className="flex flex-row items-start gap-2">
+                          <span className="font-medium shrink-0 leading-[1.3] pt-0.5">{idx + 1}.</span>
+                          <span className="leading-[1.3] pt-0.5">{noteText}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-slate-400 italic">No notes provided.</span>
+                    )}
+                  </div>
                 </div>
 
-                {/* Overlapping Realistic Signature & Stamp Container */}
-                <div className="relative h-28 flex justify-center items-center select-none pt-2">
-                  
-                  {/* Signature Layer */}
-                  <div className="absolute z-10 flex items-center justify-center">
-                    {(po.signatureType || "generated") === "generated" ? (
-                      <span 
-                        className={`text-3.5xl text-[#1E40AF] select-none text-center ${
-                          po.signatureFont === "alex" 
-                            ? "font-[--font-alex]" 
-                            : po.signatureFont === "caveat" 
-                              ? "font-[--font-caveat]" 
-                              : "font-[--font-satisfy]"
-                        }`}
-                      >
-                        {po.signatureText || po.signee.name || "Aditia Alamsyah"}
+                {/* Signee */}
+                <div className="w-full flex justify-between gap-4 mt-6">
+                  {/* Column 1: BUYER */}
+                  <div className="flex flex-col items-center text-center w-[30%]">
+                    {/* Entity Name Header - fixed consistent height */}
+                    <div className="h-10 flex items-center justify-center w-full">
+                      <span className="text-[10px] font-bold text-slate-800 uppercase tracking-wide leading-tight">
+                        {po.shipping.name || "BUYER"}
                       </span>
-                    ) : (po.signatureType || "generated") === "uploaded" && po.signatureImage ? (
-                      <img 
-                        src={po.signatureImage} 
-                        alt="Signature TTD" 
-                        className="h-20 w-36 object-contain select-none mix-blend-multiply" 
-                      />
-                    ) : (
-                      <div className="w-28 border-b border-dashed border-slate-200 py-6 text-[10px] text-slate-350 italic">Signed Digitally</div>
+                    </div>
+                    
+                    {/* Spacer for manual signature (exactly aligned with the h-24 in Column 3) */}
+                    <div className="h-24 w-full flex items-center justify-center">
+                      {/* Empty space for manual signing */}
+                    </div>
+
+                    {/* Signee Line and Title */}
+                    <div className="flex flex-col items-center justify-center px-2 w-full">
+                      <span className="text-[11px] font-bold text-transparent select-none uppercase whitespace-nowrap pb-1">
+                        [Manual Signee]
+                      </span>
+                      <div className="w-full max-w-[150px] border-b border-slate-800 mb-1"></div>
+                      <span className="text-[9px] text-slate-500 uppercase font-medium">
+                        AUTHORIZED SIGNATURE
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Column 2: SHIPPING DEPARTMENT */}
+                  <div className="flex flex-col items-center text-center w-[30%]">
+                    {/* Entity Name Header - fixed consistent height */}
+                    <div className="h-10 flex items-center justify-center w-full">
+                      <span className="text-[10px] font-bold text-slate-800 uppercase tracking-wide leading-tight">
+                        SHIPPING DEPARTMENT
+                      </span>
+                    </div>
+                    
+                    {/* Spacer for manual signature (exactly aligned with the h-24 in Column 3) */}
+                    <div className="h-24 w-full flex items-center justify-center">
+                      {/* Empty space for manual signing */}
+                    </div>
+
+                    {/* Signee Line and Title */}
+                    <div className="flex flex-col items-center justify-center px-2 w-full">
+                      <span className="text-[11px] font-bold text-transparent select-none uppercase whitespace-nowrap pb-1">
+                        [Manual Signee]
+                      </span>
+                      <div className="w-full max-w-[150px] border-b border-slate-800 mb-1"></div>
+                      <span className="text-[9px] text-slate-500 uppercase font-medium">
+                        AUTHORIZED SIGNATURE
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Column 3: PT INFINITAS DIGITAL SOLUSI */}
+                  <div className="flex flex-col items-center text-center w-[30%]">
+                    {/* Entity Name Header - fixed consistent height */}
+                    <div className="h-10 flex items-center justify-center w-full">
+                      <span className="text-[10px] font-bold text-[#1E40AF] uppercase tracking-wide leading-tight">
+                        {po.signee.company || po.vendor.name || "COMPANY"}
+                      </span>
+                    </div>
+                    
+                    {/* Active Digital Signature & Stamp Container */}
+                    <div className="relative h-24 flex justify-center items-center select-none w-full">
+                      <div className="absolute z-10 flex items-center justify-center">
+                        {(po.signatureType || "generated") === "generated" ? (
+                          <span 
+                            className={`text-2xl text-[#1E40AF] select-none text-center ${
+                              po.signatureFont === "alex" 
+                                ? "font-[--font-alex]" 
+                                : po.signatureFont === "caveat" 
+                                  ? "font-[--font-caveat]" 
+                                  : "font-[--font-satisfy]"
+                            }`}
+                          >
+                            {po.signatureText || po.signee.name || "Aditia Alamsyah"}
+                          </span>
+                        ) : (po.signatureType || "generated") === "uploaded" && po.signatureImage ? (
+                          <img 
+                            src={po.signatureImage} 
+                            alt="Signature TTD" 
+                            className="select-none mix-blend-multiply" 
+                            style={{ maxWidth: '120px', maxHeight: '64px', width: 'auto', height: 'auto' }}
+                          />
+                        ) : (
+                          <div className="w-24 border-b border-dashed border-slate-200 py-4 text-[9px] text-slate-350 italic">Signed Digitally</div>
+                        )}
+                      </div>
+                      
+                      <div className="absolute z-20 pointer-events-none select-none flex items-center justify-center translate-y-2 translate-x-2">
+                        {(po.stampType || "generated") === "generated" ? (
+                          <CorporateStamp 
+                            mainText={po.stampTextMain ?? "PT INFINITAS DIGITAL SOLUSI"} 
+                            subText={po.stampTextSub ?? "APPROVED"} 
+                            color={po.stampColor ?? "#059669"} 
+                            angle={po.stampAngle ?? -6} 
+                            size={po.stampSize ? po.stampSize * 0.72 : 72}
+                          />
+                        ) : (
+                          po.stampImage && (
+                            <img 
+                              src={po.stampImage} 
+                              alt="Stamp Cap" 
+                              className="select-none mix-blend-multiply"
+                              style={{ 
+                                transform: `rotate(${po.stampAngle ?? -6}deg)`,
+                                maxWidth: `${po.stampSize ? po.stampSize * 0.72 : 80}px`,
+                                maxHeight: `${po.stampSize ? po.stampSize * 0.72 : 80}px`,
+                                width: 'auto',
+                                height: 'auto'
+                              }}
+                            />
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Signee Name and Role Footer */}
+                    <div className="flex flex-col items-center justify-center px-2 w-full">
+                      <span className="text-[11px] font-black text-slate-900 uppercase whitespace-nowrap pb-1">
+                        {po.signee.name || "-"}
+                      </span>
+                      <div className="w-full max-w-[150px] border-b border-slate-800 mb-1"></div>
+                      <span className="text-[9px] text-slate-500 uppercase font-medium">
+                        {po.signee.title || "VP BUSINESS & FINANCE"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-row border-t border-slate-100 pt-8 mt-12 mb-8 pb-4 items-start w-full gap-6 break-inside-avoid avoid-break">
+                {/* Note / Bank Info */}
+                <div className="w-[55%] space-y-3 font-normal pr-4">
+                  {po.documentType === 'invoice' ? (
+                    <>
+                      <span className="text-[10px] font-extrabold text-[#1E40AF] tracking-wider block uppercase">Rekening Pembayaran:</span>
+                      <div className="text-xs text-slate-700 bg-blue-50/40 p-3.5 rounded-xl border border-blue-100">
+                        <table className="w-full">
+                          <tbody>
+                            <tr>
+                              <td className="py-1.5 w-28 text-slate-500 text-[11px] font-semibold">Nama Bank</td>
+                              <td className="py-1.5 font-bold text-slate-800">{po.bankDetails?.bankName || "-"}</td>
+                            </tr>
+                            <tr>
+                              <td className="py-1.5 text-slate-500 text-[11px] font-semibold">Nomor Rekening</td>
+                              <td className="py-1.5 font-mono font-bold text-slate-900 text-sm tracking-wide bg-white px-2 py-0.5 rounded inline-block border border-slate-200">{po.bankDetails?.accountNumber || "-"}</td>
+                            </tr>
+                            <tr>
+                              <td className="py-1.5 text-slate-500 text-[11px] font-semibold">Nama Rekening</td>
+                              <td className="py-1.5 font-bold text-slate-800 uppercase">{po.bankDetails?.accountName || "-"}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[10px] font-extrabold text-slate-400 tracking-wider block uppercase">Note / Terms:</span>
+                      <div className="text-[11px] text-slate-500 space-y-1.5 leading-relaxed">
+                        {po.notes.map((noteLine, idx) => (
+                          <div key={idx} className="flex flex-row items-start gap-2">
+                            <span className="font-medium shrink-0 leading-[1.3] pt-0.5">{idx + 1}.</span>
+                            <span className="leading-[1.3] pt-0.5">{noteLine}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Signee */}
+                <div className="w-[45%] text-center flex flex-col justify-between h-full min-h-[160px]">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 tracking-wider block uppercase">Authorized Signature</span>
+                    <span className="text-xs font-bold text-slate-800 block mt-1 uppercase">{po.signee.company || "PT INFINITAS DIGITAL SOLUSI"}</span>
+                  </div>
+
+                  {/* Overlapping Realistic Signature & Stamp Container */}
+                  <div className="relative h-28 flex justify-center items-center select-none pt-2">
+                    
+                    {/* Signature Layer */}
+                    <div className="absolute z-10 flex items-center justify-center">
+                      {(po.signatureType || "generated") === "generated" ? (
+                        <span 
+                          className={`text-3.5xl text-[#1E40AF] select-none text-center ${
+                            po.signatureFont === "alex" 
+                              ? "font-[--font-alex]" 
+                              : po.signatureFont === "caveat" 
+                                ? "font-[--font-caveat]" 
+                                : "font-[--font-satisfy]"
+                          }`}
+                        >
+                          {po.signatureText || po.signee.name || "Aditia Alamsyah"}
+                        </span>
+                      ) : (po.signatureType || "generated") === "uploaded" && po.signatureImage ? (
+                        <img 
+                          src={po.signatureImage} 
+                          alt="Signature TTD" 
+                          className="select-none mix-blend-multiply" 
+                          style={{ maxWidth: '144px', maxHeight: '80px', width: 'auto', height: 'auto' }}
+                        />
+                      ) : (
+                        <div className="w-28 border-b border-dashed border-slate-200 py-6 text-[10px] text-slate-350 italic">Signed Digitally</div>
+                      )}
+                    </div>
+
+                    {/* Stamp Seal Layer */}
+                    {(po.stampType || "generated") !== "blank" && (
+                      <div className="absolute z-20 pointer-events-none select-none flex items-center justify-center">
+                        {(po.stampType || "generated") === "generated" ? (
+                          <CorporateStamp 
+                            mainText={po.stampTextMain ?? "PT INFINITAS DIGITAL SOLUSI"} 
+                            subText={po.stampTextSub ?? "APPROVED"} 
+                            color={po.stampColor ?? "#0F5CA3"} 
+                            angle={po.stampAngle ?? -6} 
+                            size={po.stampSize ?? 90}
+                          />
+                        ) : (
+                          po.stampImage && (
+                            <img 
+                              src={po.stampImage} 
+                              alt="Stamp Cap" 
+                              className="select-none mix-blend-multiply"
+                              style={{ 
+                                transform: `rotate(${po.stampAngle ?? -6}deg)`,
+                                maxWidth: `${po.stampSize ?? 120}px`,
+                                maxHeight: `${po.stampSize ?? 120}px`,
+                                width: 'auto',
+                                height: 'auto'
+                              }}
+                            />
+                          )
+                        )}
+                      </div>
+                    )}
+
+                    {/* Stamp Indicator watermark if everything is blank */}
+                    {((po.signatureType || "generated") === "blank" && (po.stampType || "generated") === "blank") && (
+                      <div className="w-24 h-24 border border-dashed border-slate-250 rounded-full flex flex-col justify-center items-center text-[8px] text-slate-400 italic font-medium uppercase">
+                        <span>STAMP & TTD</span>
+                      </div>
                     )}
                   </div>
 
-                  {/* Stamp Seal Layer */}
-                  {(po.stampType || "generated") !== "blank" && (
-                    <div className="absolute z-20 pointer-events-none select-none flex items-center justify-center">
-                      {(po.stampType || "generated") === "generated" ? (
-                        <CorporateStamp 
-                          mainText={po.stampTextMain ?? "PT INFINITAS DIGITAL SOLUSI"} 
-                          subText={po.stampTextSub ?? "APPROVED"} 
-                          color={po.stampColor ?? "#0F5CA3"} 
-                          angle={po.stampAngle ?? -6} 
-                          size={po.stampSize ?? 90}
-                        />
-                      ) : (
-                        po.stampImage && (
-                          <img 
-                            src={po.stampImage} 
-                            alt="Stamp Cap" 
-                            className="object-contain select-none mix-blend-multiply"
-                            style={{ 
-                              transform: `rotate(${po.stampAngle ?? -6}deg)`,
-                              width: `${po.stampSize ?? 90}px`,
-                              height: `${po.stampSize ?? 90}px`
-                            }}
-                          />
-                        )
-                      )}
-                    </div>
-                  )}
-
-                  {/* Stamp Indicator watermark if everything is blank */}
-                  {((po.signatureType || "generated") === "blank" && (po.stampType || "generated") === "blank") && (
-                    <div className="w-24 h-24 border border-dashed border-slate-250 rounded-full flex flex-col justify-center items-center text-[8px] text-slate-400 italic font-medium uppercase">
-                      <span>STAMP & TTD</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-0.5">
-                  <span className="text-xs font-bold text-slate-900 border-b border-slate-800 pb-0.5 block px-4 inline-block uppercase">
-                    {po.signee.name || "-"}
-                  </span>
-                  <span className="text-[10px] text-slate-500 block uppercase font-medium">
-                    {po.signee.title || "Direktur"}
-                  </span>
+                  <div className="flex flex-col items-center justify-center pt-2 px-4 pb-4">
+                    <span className="text-xs font-bold text-slate-900 uppercase whitespace-nowrap pb-1">
+                      {po.signee.name || "-"}
+                    </span>
+                    <div className="w-full max-w-[220px] border-b border-slate-800 mb-1.5"></div>
+                    <span className="text-[10px] text-slate-500 uppercase font-medium">
+                      {po.signee.title || "Direktur"}
+                    </span>
+                  </div>
                 </div>
               </div>
+            )}
 
             </div>
-
-          </div>
 
           {/* Live Document Canvas (Page 2: Appendix) */}
           {po.appendixEnabled && (
             <div 
               id="printable-appendix-document" 
-              className={`bg-white justify-between page-break relative shrink-0 flex flex-col w-[794px] min-h-[1123px] p-8 ${
+              className={`bg-white justify-between break-before-page relative shrink-0 flex flex-col w-[794px] min-h-[1120px] p-8 ${
                 isExportingPDF 
                   ? "border-none shadow-none rounded-none" 
                   : "shadow-lg rounded-xl border border-slate-200"
@@ -2165,33 +2535,37 @@ export default function App() {
                   
                   {/* Brand Visual logo matching indilus / kustom with brand name text */}
                   <div className="flex items-center gap-4">
-                    <div className="relative shrink-0 flex items-center justify-center p-2 rounded-xl bg-slate-50 border border-slate-100">
+                    <div className="relative shrink-0 flex items-center justify-center">
                       {po.logoType === "uploaded" && po.logoImage ? (
                         <img 
                           src={po.logoImage} 
                           alt={po.company.brand} 
-                          className="h-10 max-w-[125px] max-h-12 object-contain" 
+                          className="max-w-[200px] max-h-16 w-auto object-contain" 
                         />
                       ) : (
-                        <svg className="w-12 h-12" viewBox="0 0 100 50">
-                          <path 
-                            d="M25,25 C25,35 35,42 45,35 C55,28 65,15 75,25 C85,35 75,42 65,35 C55,28 45,15 25,25 Z" 
-                            fill="none" 
-                            stroke="#0F5CA3" 
-                            strokeWidth="8" 
-                            strokeLinecap="round"
-                          />
-                          <circle cx="21" cy="24" r="5" fill="#38BDF8" />
-                        </svg>
+                        <div className="flex items-center gap-4">
+                          <div className="relative shrink-0 flex items-center justify-center p-2 rounded-xl bg-slate-50 border border-slate-100">
+                            <svg className="w-12 h-12" viewBox="0 0 100 50">
+                              <path 
+                                d="M25,25 C25,35 35,42 45,35 C55,28 65,15 75,25 C85,35 75,42 65,35 C55,28 45,15 25,25 Z" 
+                                fill="none" 
+                                stroke="#0F5CA3" 
+                                strokeWidth="8" 
+                                strokeLinecap="round"
+                              />
+                              <circle cx="21" cy="24" r="5" fill="#38BDF8" />
+                            </svg>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-black text-slate-900 leading-tight tracking-tight uppercase">
+                              {po.company.name || "PT INFINITAS DIGITAL SOLUSI"}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-none mt-0.5">
+                              {po.company.subTitle || "INFINITAS DIGITAL SOLUSI"}
+                            </span>
+                          </div>
+                        </div>
                       )}
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-black text-slate-900 leading-tight tracking-tight uppercase">
-                        {po.company.name || "PT INFINITAS DIGITAL SOLUSI"}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-none mt-0.5">
-                        {po.company.subTitle || "INFINITAS DIGITAL SOLUSI"}
-                      </span>
                     </div>
                   </div>
 
@@ -2217,13 +2591,22 @@ export default function App() {
                 {/* APPENDIX CLAUSES LIST */}
                 <div className="space-y-5 pt-3">
                   {(po.appendixItems || []).map((item, idx) => (
-                    <div key={item.id} className="space-y-1.5 pl-4 border-l-2 border-[#0F5CA3] py-0.5">
+                    <div key={item.id} className="space-y-1.5 pl-4 border-l-2 border-[#0F5CA3] py-0.5 avoid-break break-inside-avoid">
                       <h4 className="text-xs font-bold text-slate-900 uppercase tracking-tight">
                         {item.title}
                       </h4>
                       <p className="text-[11px] text-slate-600 leading-relaxed text-justify whitespace-pre-wrap">
                         {item.content}
                       </p>
+                      {item.imageUrl && (
+                        <div className="pt-2 pb-1">
+                          <img 
+                            src={item.imageUrl} 
+                            alt={item.title}
+                            className="max-h-64 object-contain rounded border border-slate-200" 
+                          />
+                        </div>
+                      )}
                     </div>
                   ))}
 
@@ -2284,7 +2667,7 @@ export default function App() {
                   </div>
                   <div>
                     <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                      <span>Pratinjau Cetak PDF Purchase Order</span>
+                      <span>{po.documentType === 'invoice' ? 'Pratinjau Cetak PDF Invoice' : 'Pratinjau Cetak PDF Purchase Order'}</span>
                       <span className="hidden sm:inline bg-sky-100 text-sky-800 text-[9px] px-2 py-0.5 rounded-full uppercase font-black">PREVIEW</span>
                     </h3>
                     <p className="text-[10px] text-slate-500 mt-0.5">Berisi detail dokumen siap cetak sesuai ukuran asli A4 secara presisi</p>

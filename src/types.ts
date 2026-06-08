@@ -16,6 +16,16 @@ export interface POMetadata {
   issueDate: string;
   paymentTerm: string;
   priceTerm: string;
+  // Invoice specific fields
+  invoiceNumber?: string;
+  deliveryOrderNumber?: string;
+  dueDate?: string;
+}
+
+export interface BankDetails {
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
 }
 
 export interface POItem {
@@ -24,6 +34,8 @@ export interface POItem {
   qty: number;
   unit: string;
   price: number;
+  information?: string;
+  keterangan?: string;
 }
 
 export interface POSignee {
@@ -36,15 +48,18 @@ export interface AppendixItem {
   id: string;
   title: string;
   content: string;
+  imageUrl?: string;
 }
 
 export interface PurchaseOrder {
+  documentType?: "po" | "invoice" | "delivery_order";
   company: CompanyInfo;
   vendor: ClientContact;
   shipping: ClientContact;
   metadata: POMetadata;
   items: POItem[];
   notes: string[];
+  bankDetails?: BankDetails;
   signee: POSignee;
   
   // Appendix Configuration

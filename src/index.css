@@ -15,6 +15,11 @@ body {
   color: #1e293b;
 }
 
+.avoid-break {
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+}
+
 /* Custom scrollbars for a highly polished editor experience */
 ::-webkit-scrollbar {
   width: 6px;

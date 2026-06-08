@@ -1,6 +1,7 @@
 import { PurchaseOrder } from "./types";
 
 export const defaultPurchaseOrder: PurchaseOrder = {
+  documentType: "po",
   company: {
     name: "PT INFINITAS DIGITAL SOLUSI",
     brand: "indilus",
@@ -38,6 +39,11 @@ export const defaultPurchaseOrder: PurchaseOrder = {
     "Purchase Order Number must be stated on the Note/Invoice/Receipt",
     "If the delivery will be carried out in stages, then Each shipment of goods must be accompanied by a copy of the Purchase Order."
   ],
+  bankDetails: {
+    bankName: "BNI",
+    accountNumber: "8881999939",
+    accountName: "PT INFINITAS DIGITAL SOLUSI"
+  },
   signee: {
     company: "PT INFINITAS DIGITAL SOLUSI",
     name: "ADITIA ALAMSYAH",
