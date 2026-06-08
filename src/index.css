@@ -1,0 +1,129 @@
+@import url('https://fonts.googleapis.com/css2?family=Alex+Brush&family=Caveat:wght@400;700&family=Satisfy&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-alex: "Alex Brush", cursive;
+  --font-caveat: "Caveat", cursive;
+  --font-satisfy: "Satisfy", cursive;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #fafbfe;
+  color: #1e293b;
+}
+
+/* Custom scrollbars for a highly polished editor experience */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 0 !important;
+  }
+
+  /* Set pure white backgrounds for print output */
+  body, html {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide app chrome, headers, controls, and dialogs */
+  header,
+  .no-print,
+  .lg\:col-span-5,
+  .fixed,
+  button,
+  .chevron-trigger {
+    display: none !important;
+  }
+
+  /* Expand preview container to full screen */
+  .lg\:col-span-12,
+  .lg\:col-span-7,
+  .grid {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    background: transparent !important;
+  }
+
+  /* Centered exact A4 measurements for high precision print alignment */
+  #printable-po-document,
+  #printable-appendix-document {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    min-height: 297mm !important;
+    max-height: 297mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 20mm !important;
+    margin: 0 auto !important;
+    background: #ffffff !important;
+    box-sizing: border-box !important;
+    position: relative !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Force clean page breaks and avoid mid-row breaks */
+  table {
+    page-break-inside: auto !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .grid, .bg-sky-50\/30, .bg-indigo-900\/5, .bg-slate-100, .border-slate-200 {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Force clean page breaks on elements with this class */
+  .page-break {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+
+  /* Ensure colors and borders display beautifully inside PDF */
+  th, td {
+    border-color: #cbd5e1 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .bg-slate-50, .bg-slate-100, .bg-sky-50, .bg-indigo-50, .bg-sky-50\/30, .bg-indigo-900\/5 {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
