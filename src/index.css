@@ -7,12 +7,15 @@
   --font-alex: "Alex Brush", cursive;
   --font-caveat: "Caveat", cursive;
   --font-satisfy: "Satisfy", cursive;
+
+  --color-primary: #0C4196;
+  --color-secondary: #2EB9FF;
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: #fafbfe;
-  color: #1e293b;
+  background-color: #f8fafc;
+  color: #0f172a;
 }
 
 .avoid-break {
@@ -130,5 +133,57 @@ body {
   .bg-slate-50, .bg-slate-100, .bg-sky-50, .bg-indigo-50, .bg-sky-50\/30, .bg-indigo-900\/5 {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+}
+
+/* ==========================================
+   MOBILE PREVENT ROTATION ZOOM & TOUCH OPTIMIZATION
+   ========================================== */
+@media (max-width: 1023px) {
+  /* Prevent any automatic viewport zooming on focused fields */
+  input, 
+  select, 
+  textarea {
+    font-size: 16px !important; /* Forces 16px minimum preventing browser auto-zoom */
+  }
+
+  /* Deep enhance all document editors inputs/selects on mobile */
+  .flex-1.p-5.overflow-y-auto input,
+  .flex-1.p-5.overflow-y-auto select,
+  .flex-1.p-5.overflow-y-auto textarea,
+  .space-y-4 input,
+  .space-y-4 select,
+  .space-y-4 textarea {
+    font-size: 16px !important;
+    padding-top: 0.7rem !important;
+    padding-bottom: 0.7rem !important;
+    padding-left: 0.9rem !important;
+    padding-right: 0.9rem !important;
+    border-radius: 12px !important;
+    min-height: 44px !important; /* Perfect physical touch target height */
+    line-height: normal !important;
+  }
+
+  /* Set highly readable and comfortable contrast labels */
+  .flex-1.p-5.overflow-y-auto label,
+  .space-y-4 label {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    margin-bottom: 5px !important;
+    color: #475569 !important; /* Rich slate-600 */
+    letter-spacing: 0.05em !important;
+    display: inline-block !important;
+  }
+
+  /* Scale headers and items container */
+  .flex-1.p-5 {
+    padding: 1.25rem !important; /* More breathing room */
+  }
+
+  /* Make list actions spacious */
+  .flex-1.p-5 button,
+  .space-y-4 button {
+    min-height: 40px !important;
+    font-size: 12px !important;
   }
 }

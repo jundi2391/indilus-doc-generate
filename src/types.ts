@@ -2,6 +2,9 @@ export interface CompanyInfo {
   name: string;
   brand: string;
   subTitle: string;
+  npwp?: string;
+  attn?: string;
+  phone?: string;
 }
 
 export interface ClientContact {
@@ -9,6 +12,7 @@ export interface ClientContact {
   address: string;
   attn: string;
   phone?: string;
+  npwp?: string;
 }
 
 export interface POMetadata {
@@ -26,6 +30,57 @@ export interface BankDetails {
   bankName: string;
   accountNumber: string;
   accountName: string;
+}
+
+export interface DatabaseCompany {
+  id?: string;
+  company_name: string;
+  legal_name?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  npwp?: string;
+  bank_info?: string;
+  bank_name?: string;
+  bank_account?: string;
+  bank_account_name?: string;
+  logo?: string;
+  authority_signature?: string;
+  company_stamp?: string;
+  themeColor?: string; // Tailwind color name like 'indigo', 'emerald', 'amber', 'rose', 'sky'
+  
+  // Specific Authorities for different document types
+  invoice_auth_name?: string;
+  invoice_auth_position?: string;
+  invoice_auth_signature?: string;
+  invoice_auth_phone?: string;
+  
+  do_auth_name?: string;
+  do_auth_position?: string;
+  do_auth_signature?: string;
+  do_auth_phone?: string;
+  
+  po_auth_name?: string;
+  po_auth_position?: string;
+  po_auth_signature?: string;
+  po_auth_phone?: string;
+  
+  // Backward compatibility
+  authority_name?: string;
+  authority_position?: string;
+  
+  // Login credentials for multi-company isolation
+  username?: string;
+  password?: string;
+}
+
+export interface Product {
+  id?: string;
+  name: string;
+  unit: string;
+  price: number;
+  description?: string;
+  updatedAt?: string;
 }
 
 export interface POItem {

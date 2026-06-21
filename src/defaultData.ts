@@ -5,12 +5,14 @@ export const defaultPurchaseOrder: PurchaseOrder = {
   company: {
     name: "PT INFINITAS DIGITAL SOLUSI",
     brand: "indilus",
-    subTitle: "INFINITAS DIGITAL SOLUSI"
+    subTitle: "INFINITAS DIGITAL SOLUSI",
+    npwp: "01.234.567.8-999.000"
   },
   vendor: {
     name: "UD PUTRA CIPTA KARYA SEJAHTERA",
     address: "Jl Jakha No 22 Rt 04 Rw 01 Desa Kalimati Kec Adiwerna Kab. Tegal",
-    attn: "Akhmad Hilal Maftuh"
+    attn: "Akhmad Hilal Maftuh",
+    npwp: "02.345.678.9-888.000"
   },
   shipping: {
     name: "PT. KONET TECH UTAMA",
@@ -49,7 +51,7 @@ export const defaultPurchaseOrder: PurchaseOrder = {
     name: "ADITIA ALAMSYAH",
     title: "DIREKTUR"
   },
-  appendixEnabled: true,
+  appendixEnabled: false,
   appendixTitle: "ANGARAN / LAMPIRAN SPESIFIKASI TEKNIS",
   appendixItems: [
     {

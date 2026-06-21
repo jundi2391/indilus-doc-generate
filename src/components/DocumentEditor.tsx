@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { saveDocument, getDocument, getCompanies, getContacts, getProducts, getDocuments } from "../dbService";
 import { motion, AnimatePresence } from "motion/react";
+import { QRCodeSVG } from 'qrcode.react';
+import toast from 'react-hot-toast';
 import { 
   FileSpreadsheet, 
   Download, 
@@ -7,6 +11,7 @@ import {
   Trash, 
   FileText, 
   CheckCircle, 
+  Edit3, 
   Settings, 
   HelpCircle, 
   LogOut, 
@@ -24,12 +29,21 @@ import {
   PenTool,
   Upload,
   Percent,
-  Eye
+  Eye,
+  Receipt,
+  Truck,
+  Lock,
+  Package,
+  ShoppingCart,
+  Search,
+  Building,
+  AlertCircle
 } from "lucide-react";
-import { PurchaseOrder, POItem, BankDetails } from "./types";
-import { defaultPurchaseOrder } from "./defaultData";
-import { generateExcelPO } from "./excelGenerator";
-import { createGoogleSheetsPO } from "./googleSheetsExport";
+import { PurchaseOrder, POItem, BankDetails, DatabaseCompany, Product } from "../types";
+import { defaultPurchaseOrder } from "../defaultData";
+import { generateExcelPO } from "../excelGenerator";
+import { createGoogleSheetsPO } from "../googleSheetsExport";
+import { useCompany } from "../CompanyContext";
 
 // Helper functions to convert OKLCH and OKLAB to RGB / RGBA to avoid html2canvas crash
 function oklabToRgb(L: number, a: number, b: number, alpha = 1): string {
@@ -130,8 +144,8 @@ function replaceOklchAndOklab(cssText: string): string {
 
 // Realistic Corporate Sealing / Stamp component for high-fidelity PDF documents
 function CorporateStamp({ mainText, subText, color, angle, size }: { mainText: string; subText: string; color: string; angle: number; size?: number }) {
-  const finalSize = size || 90;
-  const scale = finalSize / 90;
+  const finalSize = size || 145;
+  const scale = finalSize / 145;
   // Indonesian style: rounded double-ring stamp
   return (
     <div 
@@ -140,25 +154,25 @@ function CorporateStamp({ mainText, subText, color, angle, size }: { mainText: s
         transform: `rotate(${angle || 0}deg) scale(${scale})`, 
         color: color || "#059669",
         opacity: 0.88,
-        width: "90px",
-        height: "90px"
+        width: "145px",
+        height: "145px"
       }}
     >
       {/* Circle double border */}
       <div 
-        className="absolute inset-0 rounded-full border-[2.8px] flex items-center justify-center"
+        className="absolute inset-0 rounded-full border-[3.8px] flex items-center justify-center"
         style={{ borderColor: "currentColor" }}
       >
         <div 
-          className="absolute inset-[3.5px] rounded-full border border-dashed flex items-center justify-center"
+          className="absolute inset-[4.5px] rounded-full border border-dashed flex items-center justify-center"
           style={{ borderColor: "currentColor" }}
         />
       </div>
 
       {/* Outer Curved Text on circle path */}
       <svg className="absolute inset-0 w-full h-full rotate-[-91deg]">
-        <path id="stamp-text-path-id" d="M 45,9 A 36,36 0 1,1 44.9,9" fill="none" />
-        <text className="text-[7px] font-black uppercase tracking-wider fill-current" letterSpacing="0.9">
+        <path id="stamp-text-path-id" d="M 67.5,14 A 53.5,53.5 0 1,1 67.4,14" fill="none" />
+        <text className="text-[10px] font-black uppercase tracking-wider fill-current" letterSpacing="1.2">
           <textPath href="#stamp-text-path-id" startOffset="50%" textAnchor="middle">
             {mainText ? mainText.substring(0, 42) : "PT INFINITAS DIGITAL SOLUSI"}
           </textPath>
@@ -167,30 +181,310 @@ function CorporateStamp({ mainText, subText, color, angle, size }: { mainText: s
 
       {/* Center status layout with star dividers */}
       <div 
-        className="absolute inset-[13px] rounded-full border border-double flex flex-col items-center justify-center text-center font-bold" 
+        className="absolute inset-[20px] rounded-full border border-double flex flex-col items-center justify-center text-center font-bold" 
         style={{ borderColor: "currentColor" }}
       >
-        <span className="text-[5.5px] tracking-widest leading-none">★</span>
-        <span className="text-[9.5px] font-black tracking-widest uppercase leading-none my-0.5">{subText || "APPROVED"}</span>
-        <span className="text-[5.5px] tracking-widest leading-none">★</span>
+        <span className="text-[8px] tracking-widest leading-none">★</span>
+        <span className="text-[14px] font-black tracking-widest uppercase leading-none my-0.5">{subText || "APPROVED"}</span>
+        <span className="text-[8px] tracking-widest leading-none">★</span>
       </div>
     </div>
   );
 }
 
-export default function App() {
-  // State for Purchase Order Data (loaded from local storage draft if exists)
-  const [po, setPo] = useState<PurchaseOrder>(() => {
-    const saved = localStorage.getItem("po_document_draft_v1");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error("Failed to parse saved PO draft:", e);
-      }
+export default function DocumentEditor() {
+  const { type, id } = useParams();
+  const navigate = useNavigate();
+  const { activeCompany, companies } = useCompany();
+
+  // State for Purchase Order Data
+  const [po, setPo] = useState<PurchaseOrder>(defaultPurchaseOrder);
+  const [availableCompanies, setAvailableCompanies] = useState<DatabaseCompany[]>([]);
+  const [availableContacts, setAvailableContacts] = useState<any[]>([]);
+  const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
+  const [selectedStatus, setSelectedStatus] = useState<string>("Draft");
+  const [existingPOs, setExistingPOs] = useState<any[]>([]);
+  const [poInputMode, setPoInputMode] = useState<"select" | "manual">("select");
+  const [existingDOs, setExistingDOs] = useState<any[]>([]);
+  const [doInputMode, setDoInputMode] = useState<"select" | "manual">("select");
+  
+  useEffect(() => {
+    if (companies.length > 0) {
+      setAvailableCompanies(companies as DatabaseCompany[]);
     }
-    return defaultPurchaseOrder;
-  });
+    const fetchAuxData = async () => {
+      const contactsRes = await getContacts();
+      setAvailableContacts(contactsRes);
+      const productsRes = await getProducts();
+      setAvailableProducts(productsRes as any);
+      try {
+        const poRes = await getDocuments("purchase_orders");
+        setExistingPOs(poRes);
+      } catch (err) {
+        console.error("Gagal memuat list PO: ", err);
+      }
+      try {
+        const doRes = await getDocuments("delivery_orders");
+        setExistingDOs(doRes);
+      } catch (err) {
+        console.error("Gagal memuat list DO: ", err);
+      }
+    };
+    fetchAuxData();
+  }, [companies]);
+
+  useEffect(() => {
+    if (activeCompany && companies.length > 0) {
+       // Auto-sync whenever activeCompany is set or changed.
+       // We only want this to run when specifically intended, 
+       // but for "locked" experience we ensure the selected ID is correct.
+       if (selectedCompanyId !== activeCompany.id) {
+           setSelectedCompanyId(activeCompany.id || "");
+           handleCompanySelect(activeCompany.id || "");
+       }
+    }
+  }, [activeCompany?.id, companies.length]);
+
+  useEffect(() => {
+    const loadSelections = async () => {
+       const conts = await getContacts();
+       setAvailableContacts(conts);
+    };
+    loadSelections();
+  }, []);
+
+  useEffect(() => {
+    if (po.metadata?.poNumber && existingPOs.length > 0) {
+      const match = existingPOs.some(item => item.data?.metadata?.poNumber === po.metadata.poNumber);
+      if (match) {
+        setPoInputMode("select");
+      } else {
+        setPoInputMode("manual");
+      }
+    } else if (existingPOs.length > 0) {
+      setPoInputMode("select");
+    } else {
+      setPoInputMode("manual");
+    }
+  }, [id, existingPOs.length]);
+
+  useEffect(() => {
+    if (po.metadata?.deliveryOrderNumber && existingDOs.length > 0) {
+      const match = existingDOs.some(item => item.data?.metadata?.deliveryOrderNumber === po.metadata.deliveryOrderNumber);
+      if (match) {
+        setDoInputMode("select");
+      } else {
+        setDoInputMode("manual");
+      }
+    } else if (existingDOs.length > 0) {
+      setDoInputMode("select");
+    } else {
+      setDoInputMode("manual");
+    }
+  }, [id, existingDOs.length]);
+  
+  useEffect(() => {
+    if (id && id !== "new") {
+       const collectionName = type === 'invoice' ? 'invoices' : type === 'po' ? 'purchase_orders' : 'delivery_orders';
+       getDocument(collectionName, id).then(doc => {
+           if (doc) {
+              const d = doc as any;
+              setPo({ ...defaultPurchaseOrder, ...d.data } as PurchaseOrder);
+              if (d.status) setSelectedStatus(d.status);
+              if (d.companyId) setSelectedCompanyId(d.companyId);
+           }
+       });
+    } else {
+       // Reset or load from localstorage
+       const saved = localStorage.getItem("po_document_draft_v1");
+       let initialPo: PurchaseOrder = { ...defaultPurchaseOrder, documentType: type as any };
+
+       if (saved) {
+         try {
+           const parsed = JSON.parse(saved);
+           if (parsed.documentType === type || (!parsed.documentType && type === 'po')) {
+             initialPo = parsed;
+           }
+         } catch (e) {}
+       }
+
+       // Sync from activeCompany if it exists (for new documents)
+       if (activeCompany) {
+           const company = (companies as DatabaseCompany[]).find(c => c.id === activeCompany.id);
+           if (company) {
+               setSelectedCompanyId(activeCompany.id || "");
+               
+               // Resolve authorities based on document type
+               const docType = type || initialPo.documentType || 'po';
+               const auth = docType === 'invoice' ? {
+                   name: company.invoice_auth_name || company.authority_name,
+                   title: company.invoice_auth_position || company.authority_position,
+                   signature: company.invoice_auth_signature || company.authority_signature,
+                   phone: company.invoice_auth_phone || company.phone
+               } : docType === 'delivery_order' ? {
+                   name: company.do_auth_name || company.authority_name,
+                   title: company.do_auth_position || company.authority_position,
+                   signature: company.do_auth_signature || company.authority_signature,
+                   phone: company.do_auth_phone || company.phone
+               } : { // po
+                   name: company.po_auth_name || company.authority_name,
+                   title: company.po_auth_position || company.authority_position,
+                   signature: company.po_auth_signature || company.authority_signature,
+                   phone: company.po_auth_phone || company.phone
+               };
+
+               initialPo = {
+                   ...initialPo,
+                   company: {
+                       name: company.legal_name || company.company_name,
+                       brand: company.company_name,
+                       subTitle: company.address || company.legal_name || "",
+                       npwp: company.npwp,
+                       attn: auth.name,
+                       phone: auth.phone
+                   },
+                   signee: {
+                       ...initialPo.signee,
+                       company: company.legal_name || company.company_name,
+                       name: auth.name || initialPo.signee.name,
+                       title: auth.title || initialPo.signee.title
+                   },
+                   bankDetails: (company.bank_name || company.bank_account || company.bank_account_name) ? {
+                       bankName: company.bank_name || "",
+                       accountNumber: company.bank_account || "",
+                       accountName: company.bank_account_name || company.legal_name || company.company_name
+                   } : (company.bank_info ? {
+                       bankName: company.bank_info.split(' ')[0] || company.bank_info,
+                       accountNumber: (company.bank_info.match(/\d+/) || [""])[0],
+                       accountName: company.legal_name || company.company_name
+                   } : initialPo.bankDetails),
+                   stampTextMain: company.legal_name || company.company_name,
+                   logoType: company.logo ? "uploaded" : "default",
+                   logoImage: company.logo || initialPo.logoImage,
+                   signatureType: auth.signature ? "uploaded" : "generated",
+                   signatureImage: auth.signature || initialPo.signatureImage,
+                   stampType: company.company_stamp ? "uploaded" : "generated",
+                   stampImage: company.company_stamp || initialPo.stampImage
+               };
+           }
+       }
+       setPo(initialPo);
+    }
+  }, [id, type]);
+
+  const handleSaveToDB = async () => {
+     try {
+         setIsExporting(true);
+         const collectionName = type === 'invoice' ? 'invoices' : type === 'po' ? 'purchase_orders' : 'delivery_orders';
+         const currentId = id === "new" ? undefined : id;
+         const newId = await saveDocument(collectionName, { 
+             type, 
+             data: po, 
+             status: selectedStatus, 
+             companyId: selectedCompanyId || activeCompany?.id,
+             updatedAt: new Date().toISOString()
+         }, currentId);
+         toast.success("Document saved successfully!");
+         if (id === "new") {
+            navigate(`/documents/${type}/${newId}`, { replace: true });
+         }
+     } catch (e) {
+         console.error(e);
+         toast.error("Failed to save document.");
+     } finally {
+         setIsExporting(false);
+     }
+  };
+
+  const handleCompanySelect = (compId: string) => {
+      setSelectedCompanyId(compId);
+      const company = companies.find(c => c.id === compId);
+      if (company) {
+          const docType = po.documentType || type || 'po';
+          const auth = docType === 'invoice' ? {
+              name: company.invoice_auth_name || company.authority_name,
+              title: company.invoice_auth_position || company.authority_position,
+              signature: company.invoice_auth_signature || company.authority_signature,
+              phone: company.invoice_auth_phone || company.phone
+          } : docType === 'delivery_order' ? {
+              name: company.do_auth_name || company.authority_name,
+              title: company.do_auth_position || company.authority_position,
+              signature: company.do_auth_signature || company.authority_signature,
+              phone: company.do_auth_phone || company.phone
+          } : { // po
+              name: company.po_auth_name || company.authority_name,
+              title: company.po_auth_position || company.authority_position,
+              signature: company.po_auth_signature || company.authority_signature,
+              phone: company.po_auth_phone || company.phone
+          };
+
+          setPo(prev => ({
+              ...prev,
+              company: {
+                  name: company.legal_name || company.company_name,
+                  brand: company.company_name,
+                  subTitle: company.address || company.legal_name || "",
+                  npwp: company.npwp,
+                  attn: auth.name,
+                  phone: auth.phone
+              },
+              signee: {
+                  ...prev.signee,
+                  company: company.legal_name || company.company_name,
+                  name: auth.name || prev.signee.name,
+                  title: auth.title || prev.signee.title
+              },
+              bankDetails: (company.bank_name || company.bank_account || company.bank_account_name) ? {
+                  bankName: company.bank_name || "",
+                  accountNumber: company.bank_account || "",
+                  accountName: company.bank_account_name || company.legal_name || company.company_name
+              } : (company.bank_info ? {
+                  bankName: company.bank_info.split(' ')[0] || company.bank_info,
+                  accountNumber: (company.bank_info.match(/\d+/) || [""])[0],
+                  accountName: company.legal_name || company.company_name
+              } : prev.bankDetails),
+              stampTextMain: company.legal_name || company.company_name,
+              logoType: company.logo ? "uploaded" : "default",
+              logoImage: company.logo || prev.logoImage,
+              signatureType: auth.signature ? "uploaded" : "generated",
+              signatureImage: auth.signature || prev.signatureImage,
+              stampType: company.company_stamp ? "uploaded" : "generated",
+              stampImage: company.company_stamp || prev.stampImage
+          }));
+      }
+  };
+
+  const handleContactSelect = (contactId: string, target: "vendor" | "shipping") => {
+      const contact = availableContacts.find(c => c.id === contactId);
+      if (contact) {
+          setPo(prev => ({
+              ...prev,
+              [target]: {
+                  name: contact.company_name,
+                  address: contact.address || "",
+                  attn: contact.pic_name || "",
+                  phone: contact.phone || "",
+                  npwp: contact.npwp || ""
+              }
+          }));
+      }
+  };
+
+  const handleProductSelect = (productId: string, itemIdx: number) => {
+      const product = availableProducts.find(p => p.id === productId);
+      if (product) {
+          const updatedItems = [...po.items];
+          updatedItems[itemIdx] = {
+              ...updatedItems[itemIdx],
+              description: product.name,
+              unit: product.unit,
+              price: product.price
+          };
+          setPo(prev => ({ ...prev, items: updatedItems }));
+          toast.success(`Berhasil memuat data produk: ${product.name}`);
+      }
+  };
 
   // Auto-save PO document to local storage for persistence across tabs
   useEffect(() => {
@@ -205,7 +499,6 @@ export default function App() {
     return localStorage.getItem("po_google_client_id") || "";
   });
   
-  // App system UI states
   const [tempTokenInput, setTempTokenInput] = useState<string>("");
   const [showAuthSettings, setShowAuthSettings] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -217,6 +510,53 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"details" | "addresses" | "items" | "notes" | "appendix" | "signature">("details");
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [previewPdfBlobUrl, setPreviewPdfBlobUrl] = useState<string | null>(null);
+  const [previewZoom, setPreviewZoom] = useState<number>(80);
+  const [viewMode, setViewMode] = useState<"edit" | "preview">("edit");
+
+  const docType = (type as any) || po.documentType || 'po';
+  const getTheme = () => {
+    const baseColor = activeCompany?.themeColor || 'primary';
+    
+    // Support custom hex codes
+    if (baseColor.startsWith('#')) {
+      return {
+        primary: 'custom',
+        bg: 'bg-primary',
+        hover: 'hover:bg-primary/90',
+        lightBg: 'bg-primary/5',
+        lightText: 'text-primary',
+        border: 'border-primary/20',
+        accent: 'custom',
+        hex: baseColor,
+        isCustom: true,
+        title: themeLabel('title'),
+        label: themeLabel('label')
+      };
+    }
+
+    function themeLabel(kind: 'title' | 'label') {
+      if (kind === 'title') return docType === 'invoice' ? 'Invoice Editor' : docType === 'delivery_order' ? 'DO Editor' : 'PO Editor';
+      return docType === 'invoice' ? 'INVOICE' : docType === 'delivery_order' ? 'DELIVERY ORDER' : 'PURCHASE ORDER';
+    }
+
+    // Default to 'primary' brand color if anything else is requested (to enforce brand consistency)
+    return {
+      primary: 'primary',
+      bg: 'bg-primary',
+      hover: 'hover:bg-primary/90',
+      lightBg: 'bg-primary/5',
+      lightText: 'text-primary',
+      border: 'border-primary/20',
+      accent: 'primary',
+      title: docType === 'invoice' ? 'Invoice Editor' : docType === 'delivery_order' ? 'DO Editor' : 'PO Editor',
+      label: docType === 'invoice' ? 'INVOICE' : docType === 'delivery_order' ? 'DELIVERY ORDER' : 'PURCHASE ORDER'
+    };
+  };
+  const theme = getTheme();
+
+  const isInvoice = type === 'invoice';
+  const isDO = type === 'delivery_order';
+  const isPO = type === 'po';
 
   // Persist configurations
   useEffect(() => {
@@ -764,22 +1104,24 @@ export default function App() {
       </AnimatePresence>
 
       {/* Main App Layout */}
-      <header className="sticky top-0 bg-white border-b border-slate-200 z-30 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-gradient-to-tr from-sky-600 to-indigo-600 rounded-xl text-white shadow-md shadow-sky-100">
-            <FileSpreadsheet className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              PO & Invoice
-              <span className="text-xs bg-sky-100 text-sky-800 font-semibold px-2 py-0.5 rounded-full uppercase">Template Builder</span>
-            </h1>
-            <p className="text-xs text-slate-500">Sesuaikan data dokumen dan langsung ekspor ke PDF secara presisi</p>
-          </div>
-        </div>
+      <header className="sticky top-0 bg-white border-b border-slate-200 z-30 px-6 py-4 flex flex-col sm:flex-row justify-end items-center gap-4">
 
         {/* Master Actions */}
         <div className="flex flex-nowrap items-center gap-3 w-full lg:w-auto overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
+          {/* Save DB */}
+          <button 
+            onClick={handleSaveToDB}
+            disabled={isExporting}
+            className={`flex items-center gap-2 text-sm font-semibold border text-white px-4 py-2.5 rounded-xl transition-all shadow-sm cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed shrink-0 ${!theme.isCustom ? `${theme.bg} border-${theme.primary}-700 hover:${theme.hover}` : ''}`}
+            style={{ 
+              backgroundColor: theme.isCustom ? theme.hex : undefined,
+              borderColor: theme.isCustom ? theme.hex : undefined 
+            }}
+          >
+            <CheckCircle className={`w-4 h-4 text-white ${isExporting ? "animate-pulse" : ""}`} />
+            <span>{isExporting ? "Menyimpan..." : "Simpan DB"}</span>
+          </button>
+
           {/* Pratinjau PDF */}
           <button 
             onClick={handlePreviewPDF}
@@ -840,118 +1182,128 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Mobile Mode Switcher (Tab segmented control) */}
+      <div className="lg:hidden px-6 pt-4 shrink-0">
+        <div className="bg-slate-100 p-1.5 rounded-2xl flex border border-slate-200/60 shadow-xs">
+          <button 
+            type="button"
+            onClick={() => setViewMode("edit")}
+            className={`flex-1 py-3 text-center rounded-xl font-extrabold text-[11px] uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              viewMode === 'edit' 
+                ? 'bg-white text-slate-800 shadow-md border border-slate-200/20' 
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50/50'
+            }`}
+          >
+            <Edit3 size={14} className={viewMode === 'edit' ? 'text-indigo-600' : ''} strokeWidth={2.5} />
+            Isi / Edit Data
+          </button>
+          <button 
+            type="button"
+            onClick={() => {
+              setViewMode("preview");
+              // Set zoom to 50% on mobile so they can see the layout properly
+              if (previewZoom > 60) setPreviewZoom(50);
+            }}
+            className={`flex-1 py-3 text-center rounded-xl font-extrabold text-[11px] uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              viewMode === 'preview' 
+                ? 'bg-white text-indigo-700 shadow-md border border-slate-200/20' 
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50/50'
+            }`}
+          >
+            <Eye size={14} className={viewMode === 'preview' ? 'text-indigo-600' : ''} strokeWidth={2.5} />
+            Lihat Pratinjau ({previewZoom}%)
+          </button>
+        </div>
+      </div>
+
       {/* Main body: Split screen */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6">
         
         {/* Left pane: Forms controls / Settings (Lg: 5 columns) */}
-        <div className="lg:col-span-5 space-y-6 flex flex-col h-full">
+        <div className={`lg:col-span-5 min-w-0 space-y-6 flex flex-col ${viewMode === 'edit' ? 'block' : 'hidden lg:flex'}`}>
           {/* Standard Form Editor Panels container */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
             
-            {/* Document Type Selector */}
-            <div className="p-3 border-b border-slate-100 bg-white flex justify-between items-center px-4">
-              <span className="text-xs font-bold text-slate-700 tracking-wider">TIPE DOKUMEN:</span>
-              <div className="flex bg-slate-100 p-1 rounded-xl">
-                <button
-                  onClick={() => setPo(prev => {
-                    const nextPo = { 
-                      ...prev, 
-                      documentType: "po" as const,
-                      vendor: defaultPurchaseOrder.vendor
-                    };
-                    if (!prev.notes || prev.notes.length === 0 || prev.notes[0]?.toLowerCase().includes("official proof")) {
-                      nextPo.notes = [
-                        "All Shipments Must Include: a. Invoice, b. Receipt, c. Delivery Order, d. Quality Control",
-                        "We will return the goods if they do not match the order",
-                        "Purchase Order Number must be stated on the Note/Invoice/Receipt",
-                        "If the delivery will be carried out in stages, then Each shipment of goods must be accompanied by a copy of the Purchase Order."
-                      ];
-                    }
-                    return nextPo;
-                  })}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    (!po.documentType || po.documentType === "po") 
-                      ? "bg-white text-indigo-700 shadow-sm" 
-                      : "text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  Purchase Order (PO)
-                </button>
-                <button
-                  onClick={() => setPo(prev => ({ 
-                    ...prev, 
-                    documentType: "invoice",
-                    vendor: {
-                      name: "PT INFINITAS DIGITAL SOLUSI",
-                      address: "Jl. Ring Road Jl. Raya Bubulak No.A-4, RT.01/RW.11, Bubulak, Kec. Bogor Bar., Kota Bogor, Jawa Barat 16115",
-                      attn: "Januar Nurachman",
-                      phone: "+62 895 1556 4608"
-                    }
-                  }))}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    po.documentType === "invoice" 
-                      ? "bg-white text-emerald-700 shadow-sm" 
-                      : "text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  Invoice (Tagihan)
-                </button>
-                <button
-                  onClick={() => setPo(prev => {
-                    const nextPo = { 
-                      ...prev, 
-                      documentType: "delivery_order" as const,
-                      vendor: {
-                        name: "PT INFINITAS DIGITAL SOLUSI",
-                        address: "Jl. Ring Road Jl. Raya Bubulak No.A-4, RT.01/RW.11, Bubulak, Kec. Bogor Bar., Kota Bogor, Jawa Barat 16115",
-                        attn: "Januar Nurachman",
-                        phone: "+62 895 1556 4608"
-                      }
-                    };
-                    if (!prev.notes || prev.notes.length === 0 || prev.notes[0]?.toLowerCase().includes("all shipment") || prev.notes[0]?.toLowerCase().includes("inv")) {
-                      nextPo.notes = [
-                        "This Delivery Order serves as official proof of goods receipt.",
-                        "This Delivery Order is not proof of sale.",
-                        "This Delivery Order will be accompanied by an invoice."
-                      ];
-                    }
-                    return nextPo;
-                  })}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    po.documentType === "delivery_order" 
-                      ? "bg-white text-sky-700 shadow-sm" 
-                      : "text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  Delivery Order (DO)
-                </button>
+            {/* Document Meta Selection (Company) */}
+            <div className={`p-4 border-b border-slate-100 ${theme.lightBg}/30 space-y-4`}>
+                <div className="w-full">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Company Profile (Issuer)</label>
+                    {activeCompany ? (
+                        <div className="flex flex-col gap-1.5">
+                            <div 
+                                className={`w-full bg-white border rounded-lg px-3 py-2 text-sm font-bold flex items-center justify-between shadow-sm`}
+                                style={{ 
+                                    borderColor: theme.isCustom ? theme.hex + '66' : '',
+                                    color: theme.isCustom ? theme.hex : ''
+                                }}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <div 
+                                        className="w-1.5 h-1.5 rounded-full animate-pulse"
+                                        style={{ 
+                                            backgroundColor: theme.isCustom ? theme.hex : '',
+                                            boxShadow: theme.isCustom ? `0 0 8px ${theme.hex}` : ''
+                                        }}
+                                    ></div>
+                                    <span>{activeCompany.company_name}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-[8px] font-black bg-emerald-500 text-white px-1.5 py-0.5 rounded-full tracking-tighter">LOCKED & SYNCED</span>
+                                    <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                </div>
+                            </div>
+                            <p className="text-[8px] text-slate-400 font-bold uppercase italic tracking-tighter text-right">Aset tersinkronisasi otomatis dari database</p>
+                        </div>
+                    ) : (
+                        <select 
+                            value={selectedCompanyId} 
+                            onChange={(e) => handleCompanySelect(e.target.value)}
+                            className={`w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-${theme.primary}-500/20 focus:border-${theme.primary}-500 transition-all outline-none`}
+                        >
+                            <option value="">Select Company...</option>
+                            {availableCompanies.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+                        </select>
+                    )}
+                    {activeCompany && <p className="text-[9px] text-slate-400 mt-1 italic leading-tight">Berubah otomatis via Sidebar</p>}
+                </div>
+            </div>
+
+            {/* Document Type Info (Locked by URL) */}
+            <div className="p-4 border-b border-slate-100 bg-white flex justify-between items-center">
+              <span className={`text-[10px] font-black text-${theme.primary}-700 tracking-widest uppercase flex items-center gap-2`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${theme.bg}`}></div>
+                Konfigurasi {theme.label}
+              </span>
+              <div className={`px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest ${theme.bg} text-white shadow-xs`}>
+                 LOCKED: {theme.label}
               </div>
             </div>
 
             {/* Tab Swappers */}
-            <div className="grid grid-cols-6 border-b border-slate-100 bg-slate-50/50 p-1">
+            <div className="flex overflow-x-auto lg:grid lg:grid-cols-6 border-b border-slate-100 bg-slate-50/40 p-1.5 gap-1.5 scrollbar-none snap-x">
               {[
                 { id: "details", label: "Metadata", icon: FileText },
                 { id: "addresses", label: "Kontak", icon: MapPin },
                 { id: "items", label: "Barang", icon: FileSpreadsheet },
                 { id: "notes", label: "Tambahan", icon: Info },
                 { id: "appendix", label: "Lampiran", icon: Paperclip },
-                { id: "signature", label: "Logo & TTD", icon: PenTool }
+                { id: "signature", label: "Logo/TTD", icon: PenTool }
               ].map(tab => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
                 return (
                   <button
                     key={tab.id}
+                    type="button"
                     onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold rounded-xl transition-all ${
+                    className={`flex flex-col items-center justify-center gap-1.5 py-2.5 lg:py-3 text-[11px] lg:text-[9.5px] font-extrabold rounded-xl transition-all cursor-pointer shrink-0 min-w-[85px] lg:min-w-0 snap-center ${
                       isActive 
-                        ? "bg-white text-indigo-600 shadow-sm" 
-                        : "text-slate-500 hover:text-slate-800 hover:bg-white/50"
+                        ? `bg-white text-${theme.primary}-600 shadow-md shadow-slate-200/55 border border-slate-200/40` 
+                        : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
                     }`}
                   >
-                    <Icon className={`w-3.5 h-3.5 ${isActive ? "text-indigo-600" : "text-slate-400"}`} />
-                    <span>{tab.label}</span>
+                    <Icon className={`w-4 h-4 ${isActive ? `text-${theme.primary}-600` : "text-slate-400"}`} strokeWidth={isActive ? 2.5 : 2} />
+                    <span className="tracking-tight">{tab.label}</span>
                   </button>
                 );
               })}
@@ -967,7 +1319,7 @@ export default function App() {
                   animate={{ opacity: 1, x: 0 }}
                   className="space-y-4"
                 >
-                  <h3 className="text-sm font-bold text-slate-800 border-l-4 border-indigo-500 pl-2">
+                  <h3 className={`text-sm font-bold text-slate-800 border-l-4 border-${theme.primary}-500 pl-2`}>
                     {po.documentType === 'invoice' ? 'Informasi & Nomor Invoice' : po.documentType === 'delivery_order' ? 'Informasi & Nomor DO' : 'Informasi & Nomor PO'}
                   </h3>
                   
@@ -980,7 +1332,7 @@ export default function App() {
                             type="text" 
                             value={po.metadata.invoiceNumber || ""}
                             onChange={(e) => handleMetaChange("invoiceNumber", e.target.value)}
-                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                            className={`w-full px-3.5 py-2 border border-slate-200 focus:border-${theme.primary}-500 rounded-xl text-xs focus:ring-1 focus:ring-${theme.primary}-500 outline-none transition-all`}
                           />
                         </div>
                         <div className="space-y-1.5">
@@ -989,29 +1341,109 @@ export default function App() {
                             type="date" 
                             value={po.metadata.issueDate}
                             onChange={(e) => handleMetaChange("issueDate", e.target.value)}
-                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                            className={`w-full px-3.5 py-2 border border-slate-200 focus:border-${theme.primary}-500 rounded-xl text-xs focus:ring-1 focus:ring-${theme.primary}-500 outline-none transition-all`}
                           />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Nomor PO (Opsional)</label>
-                          <input 
-                            type="text" 
-                            value={po.metadata.poNumber || ""}
-                            onChange={(e) => handleMetaChange("poNumber", e.target.value)}
-                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
-                          />
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Nomor PO (Opsional)</label>
+                            {po.documentType !== "invoice" && existingPOs.filter(item => {
+                              const targetCompId = selectedCompanyId || activeCompany?.id;
+                              return !targetCompId || item.companyId === targetCompId;
+                            }).length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setPoInputMode(poInputMode === "select" ? "manual" : "select")}
+                                className={`text-[10px] font-black uppercase tracking-wider text-${theme.primary}-600 hover:underline cursor-pointer`}
+                              >
+                                {poInputMode === "select" ? "Ketik Manual" : "Pilih PO Terdaftar"}
+                              </button>
+                            )}
+                          </div>
+                          {po.documentType !== "invoice" && poInputMode === "select" && existingPOs.filter(item => {
+                            const targetCompId = selectedCompanyId || activeCompany?.id;
+                            return !targetCompId || item.companyId === targetCompId;
+                          }).length > 0 ? (
+                            <select
+                              value={po.metadata.poNumber || ""}
+                              onChange={(e) => handleMetaChange("poNumber", e.target.value)}
+                              className={`w-full px-3.5 py-2 bg-white border border-slate-200 focus:border-${theme.primary}-500 rounded-xl text-xs focus:ring-1 focus:ring-${theme.primary}-500 outline-none transition-all`}
+                            >
+                              <option value="">-- Pilih Nomor PO --</option>
+                              {existingPOs.filter(item => {
+                                const targetCompId = selectedCompanyId || activeCompany?.id;
+                                return !targetCompId || item.companyId === targetCompId;
+                              }).map((p) => {
+                                const num = p.data?.metadata?.poNumber;
+                                if (!num) return null;
+                                return (
+                                  <option key={p.id} value={num}>
+                                    {num} ({p.data?.vendor?.name || p.data?.client?.name || "Tanpa Rekanan"})
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          ) : (
+                            <input 
+                              type="text" 
+                              value={po.metadata.poNumber || ""}
+                              onChange={(e) => handleMetaChange("poNumber", e.target.value)}
+                              placeholder="Ketik nomor PO..."
+                              className={`w-full px-3.5 py-2 border border-slate-200 focus:border-${theme.primary}-500 rounded-xl text-xs focus:ring-1 focus:ring-${theme.primary}-500 outline-none transition-all`}
+                            />
+                          )}
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Nomor DO (Opsional)</label>
-                          <input 
-                            type="text" 
-                            value={po.metadata.deliveryOrderNumber || ""}
-                            onChange={(e) => handleMetaChange("deliveryOrderNumber", e.target.value)}
-                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
-                          />
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Nomor DO (Opsional)</label>
+                            {existingDOs.filter(item => {
+                              const targetCompId = selectedCompanyId || activeCompany?.id;
+                              return !targetCompId || item.companyId === targetCompId;
+                            }).length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setDoInputMode(doInputMode === "select" ? "manual" : "select")}
+                                className={`text-[10px] font-black uppercase tracking-wider text-${theme.primary}-600 hover:underline cursor-pointer`}
+                              >
+                                {doInputMode === "select" ? "Ketik Manual" : "Pilih DO Terdaftar"}
+                              </button>
+                            )}
+                          </div>
+                          {doInputMode === "select" && existingDOs.filter(item => {
+                            const targetCompId = selectedCompanyId || activeCompany?.id;
+                            return !targetCompId || item.companyId === targetCompId;
+                          }).length > 0 ? (
+                            <select
+                              value={po.metadata.deliveryOrderNumber || ""}
+                              onChange={(e) => handleMetaChange("deliveryOrderNumber", e.target.value)}
+                              className={`w-full px-3.5 py-2 bg-white border border-slate-200 focus:border-${theme.primary}-500 rounded-xl text-xs focus:ring-1 focus:ring-${theme.primary}-500 outline-none transition-all`}
+                            >
+                              <option value="">-- Pilih Nomor DO --</option>
+                              {existingDOs.filter(item => {
+                                const targetCompId = selectedCompanyId || activeCompany?.id;
+                                return !targetCompId || item.companyId === targetCompId;
+                              }).map((p) => {
+                                const num = p.data?.metadata?.deliveryOrderNumber;
+                                if (!num) return null;
+                                return (
+                                  <option key={p.id} value={num}>
+                                    {num} ({p.data?.vendor?.name || p.data?.client?.name || "Tanpa Rekanan"})
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          ) : (
+                            <input 
+                              type="text" 
+                              value={po.metadata.deliveryOrderNumber || ""}
+                              onChange={(e) => handleMetaChange("deliveryOrderNumber", e.target.value)}
+                              placeholder="Ketik nomor DO..."
+                              className={`w-full px-3.5 py-2 border border-slate-200 focus:border-${theme.primary}-500 rounded-xl text-xs focus:ring-1 focus:ring-${theme.primary}-500 outline-none transition-all`}
+                            />
+                          )}
                         </div>
                       </div>
 
@@ -1022,16 +1454,16 @@ export default function App() {
                             type="text" 
                             value={po.metadata.paymentTerm || ""}
                             onChange={(e) => handleMetaChange("paymentTerm", e.target.value)}
-                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                            className={`w-full px-3.5 py-2 border border-slate-200 focus:border-${theme.primary}-500 rounded-xl text-xs focus:ring-1 focus:ring-${theme.primary}-500 outline-none transition-all`}
                           />
                         </div>
                         <div className="space-y-1.5">
                           <label className="text-[11px] font-bold text-slate-700 tracking-wider uppercase block">Due Dated</label>
                           <input 
-                            type="text" 
+                            type="date" 
                             value={po.metadata.dueDate || ""}
                             onChange={(e) => handleMetaChange("dueDate", e.target.value)}
-                            className="w-full px-3.5 py-2 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                            className={`w-full px-3.5 py-2 border border-slate-200 focus:border-${theme.primary}-500 rounded-xl text-xs focus:ring-1 focus:ring-${theme.primary}-500 outline-none transition-all`}
                           />
                         </div>
                       </div>
@@ -1128,106 +1560,166 @@ export default function App() {
                   animate={{ opacity: 1, x: 0 }}
                   className="space-y-6"
                 >
-                  {/* Vendor Segment */}
-                  <div className="space-y-4">
-                    <h3 className="text-sm font-bold text-sky-700 flex items-center gap-1.5 pl-2 border-l-4 border-sky-500">
-                      <User className="w-4 h-4" /> Penyedia / Vendor
-                    </h3>
+                  {/* Issuer Segment (FROM) */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 
+                          className="text-sm font-black flex items-center gap-1.5 pl-2 border-l-4"
+                          style={{ 
+                              color: theme.isCustom ? theme.hex : '',
+                              borderColor: theme.isCustom ? theme.hex : ''
+                          }}
+                        >
+                          <Building className="w-4 h-4 text-primary" /> FROM (Pengirim / Unit Bisnis)
+                        </h3>
+                        {activeCompany && (
+                          <span className="text-[9px] font-black bg-primary text-white px-2 py-0.5 rounded-full tracking-widest flex items-center gap-1">
+                            <Lock size={8} /> SYNCED FROM {type?.toUpperCase()} AUTH
+                          </span>
+                        )}
+                      </div>
                     
-                    <div className="space-y-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-700 uppercase block">Nama Perusahaan / Supplier</label>
-                        <input 
-                          type="text" 
-                          value={po.vendor.name}
-                          onChange={(e) => handleClientChange("vendor", "name", e.target.value)}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                        />
-                      </div>
-                      
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-700 uppercase block">Alamat Lengkap</label>
-                        <textarea 
-                          rows={2}
-                          value={po.vendor.address}
-                          onChange={(e) => handleClientChange("vendor", "address", e.target.value)}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-3 p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
+                        <div className="space-y-1 relative">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase block">Penerbit Dokumen (Issuer)</label>
+                          <input 
+                            type="text" 
+                            readOnly={!!activeCompany}
+                            value={po.company.name}
+                            className={`w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none ${activeCompany ? 'bg-slate-100/50 font-bold text-indigo-700' : 'bg-white focus:ring-1 focus:ring-indigo-500 font-medium'}`}
+                            placeholder="Data diambil otomatis dari profil bisnis aktif"
+                          />
+                        </div>
                         <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-700 uppercase block">Attention Contact (Attn)</label>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase block">Alamat / Detail Bisnis</label>
+                          <textarea 
+                            rows={2}
+                            readOnly={!!activeCompany}
+                            value={po.company.subTitle}
+                            className={`w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none resize-none ${activeCompany ? 'bg-slate-100/50 text-slate-500 italic' : 'bg-white focus:ring-1 focus:ring-indigo-500'}`}
+                            placeholder="Alamat akan muncul di header dokumen"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase block">NPWP Issuer</label>
+                            <input 
+                              type="text" 
+                              readOnly={!!activeCompany}
+                              value={po.company.npwp || ""}
+                               onChange={(e) => setPo(prev => ({ ...prev, company: { ...prev.company, npwp: e.target.value } }))}
+                              className={`w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none ${activeCompany ? 'bg-slate-100/50 text-slate-500 font-medium' : 'bg-white focus:ring-1 focus:ring-indigo-500'}`}
+                              placeholder="NPWP Perusahaan"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase block">Telepon / ATTN</label>
+                            <input 
+                              type="text" 
+                              readOnly={!!activeCompany}
+                              value={`${po.company.attn || ''} ${po.company.phone ? `(${po.company.phone})` : ''}`.trim()}
+                              className={`w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none ${activeCompany ? 'bg-slate-100/50 text-slate-500 font-medium' : 'bg-white focus:ring-1 focus:ring-indigo-500'}`}
+                              placeholder="Nama PIC & No Telp"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 pt-4 border-t border-slate-100">
+                      <div className="flex flex-col gap-3">
+                          <div className="flex items-center justify-between">
+                            <h3 
+                              className="text-sm font-black flex items-center gap-1.5 pl-2 border-l-4"
+                              style={{ 
+                                  color: theme.isCustom ? theme.hex : '',
+                                  borderColor: theme.isCustom ? theme.hex : ''
+                              }}
+                            >
+                              <User className="w-4 h-4" /> SENT TO (Penerima / Client)
+                            </h3>
+                            <button 
+                                onClick={() => navigate('/contacts')}
+                                className="text-[9px] font-bold text-indigo-600 hover:underline flex items-center gap-1"
+                            >
+                                <Plus size={10} /> Tambah Kontak
+                            </button>
+                          </div>
+
+                          <div className="relative">
+                            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                              <Search className="w-3.5 h-3.5 text-slate-400" />
+                            </div>
+                            <select 
+                                onChange={(e) => handleContactSelect(e.target.value, 'vendor')}
+                                className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-xs font-bold text-slate-700 focus:ring-4 focus:ring-indigo-600/10 focus:border-indigo-600 outline-none transition-all appearance-none"
+                            >
+                                <option value="">Pilih dari Database Kontak...</option>
+                                {availableContacts.map(c => (
+                                    <option key={c.id} value={c.id}>{c.company_name} ({c.type})</option>
+                                ))}
+                            </select>
+                            <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                            </div>
+                          </div>
+                      </div>
+                    
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                        <div className="space-y-1 md:col-span-2">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Nama Instansi / Perusahaan</label>
+                          <input 
+                            type="text" 
+                            value={po.vendor.name}
+                            onChange={(e) => handleClientChange("vendor", "name", e.target.value)}
+                            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-600/5 focus:border-indigo-600 outline-none transition-all"
+                            placeholder="Contoh: PT Client Sejahtera"
+                          />
+                        </div>
+                      
+                        <div className="space-y-1 md:col-span-2">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Alamat Pengiriman / Penagihan</label>
+                          <textarea 
+                            rows={3}
+                            value={po.vendor.address}
+                            onChange={(e) => handleClientChange("vendor", "address", e.target.value)}
+                            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-600/5 focus:border-indigo-600 outline-none transition-all resize-none"
+                            placeholder="Alamat lengkap tujuan dokumen..."
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Ditujukan Kepada (Attn)</label>
                           <input 
                             type="text" 
                             value={po.vendor.attn}
                             onChange={(e) => handleClientChange("vendor", "attn", e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-600/5 focus:border-indigo-600 outline-none transition-all"
+                            placeholder="Nama PIC / Bagian"
                           />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-700 uppercase block">Nomor Telepon (Opsional)</label>
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Nomor HP / WhatsApp</label>
                           <input 
                             type="text" 
                             value={po.vendor.phone || ""}
                             onChange={(e) => handleClientChange("vendor", "phone", e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-600/5 focus:border-indigo-600 outline-none transition-all"
+                            placeholder="0812xxxxxx"
+                          />
+                        </div>
+                        <div className="space-y-1 md:col-span-2">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">NPWP (Client / Vendor)</label>
+                          <input 
+                            type="text" 
+                            value={po.vendor.npwp || ""}
+                            onChange={(e) => handleClientChange("vendor", "npwp", e.target.value)}
+                            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-600/5 focus:border-indigo-600 outline-none transition-all"
+                            placeholder="01.234.567.8-901.234"
                           />
                         </div>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Destination Segment */}
-                  <div className="space-y-4 pt-3 border-t border-slate-100">
-                    <h3 className="text-sm font-bold text-indigo-700 flex items-center gap-1.5 pl-2 border-l-4 border-indigo-500">
-                      <MapPin className="w-4 h-4" /> Tujuan Pengiriman (Sent To)
-                    </h3>
-                    
-                    <div className="space-y-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-700 uppercase block">Nama Perusahaan Penerima</label>
-                        <input 
-                          type="text" 
-                          value={po.shipping.name}
-                          onChange={(e) => handleClientChange("shipping", "name", e.target.value)}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                        />
-                      </div>
-                      
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-700 uppercase block">Alamat Pengiriman</label>
-                        <textarea 
-                          rows={2}
-                          value={po.shipping.address}
-                          onChange={(e) => handleClientChange("shipping", "address", e.target.value)}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-700 uppercase block">Penerima (Attn)</label>
-                          <input 
-                            type="text" 
-                            value={po.shipping.attn}
-                            onChange={(e) => handleClientChange("shipping", "attn", e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-700 uppercase block">No. Telepon</label>
-                          <input 
-                            type="text" 
-                            value={po.shipping.phone}
-                            onChange={(e) => handleClientChange("shipping", "phone", e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
                 </motion.div>
               )}
 
@@ -1267,13 +1759,28 @@ export default function App() {
                         </div>
 
                         <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 font-medium block">Nama Barang / Deskripsi</label>
-                          <input 
-                            type="text" 
-                            value={item.description}
-                            onChange={(e) => handleItemPropertyChange(item.id, "description", e.target.value)}
-                            className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-1 focus:ring-indigo-500"
-                          />
+                          <label className="text-[10px] text-slate-500 font-medium block flex justify-between">
+                             <span>Nama Barang / Deskripsi</span>
+                             <span className="text-indigo-600 font-bold flex items-center gap-1"><Package size={8}/> Ambil dari Katalog</span>
+                          </label>
+                          <div className="relative">
+                            <select 
+                                onChange={(e) => handleProductSelect(e.target.value, idx)}
+                                className="absolute right-2 top-1.5 bg-white border border-indigo-200 rounded text-[9px] font-bold text-indigo-700 px-1 hover:border-indigo-400 outline-none w-24"
+                            >
+                                <option value="">Pilih Produk...</option>
+                                {availableProducts.map(p => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                            </select>
+                            <input 
+                              type="text" 
+                              value={item.description}
+                              onChange={(e) => handleItemPropertyChange(item.id, "description", e.target.value)}
+                              className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-1 focus:ring-indigo-500 pr-28"
+                              placeholder="Ketik manual atau pilih dari katalog →"
+                            />
+                          </div>
                         </div>
 
                         {/* Numbers details */}
@@ -1483,7 +1990,12 @@ export default function App() {
 
                   {/* Signee Authorized */}
                   <div className="space-y-4 pt-4 border-t border-slate-100">
-                    <h3 className="text-sm font-bold text-slate-800 border-l-4 border-indigo-500 pl-2">Informasi Otoritas Tanda Tangan</h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-black text-slate-800 border-l-4 border-primary pl-2 uppercase tracking-tight">Otoritas Tanda Tangan</h3>
+                      <span className="text-[9px] font-black bg-secondary/10 text-secondary border border-secondary/20 px-2.5 py-1 rounded-lg uppercase tracking-widest">
+                        Type: {type === 'invoice' ? 'Invoice Authority' : type === 'delivery_order' ? 'DO Authority' : 'PO Authority'}
+                      </span>
+                    </div>
                     
                     <div className="space-y-3">
                       <div className="space-y-1">
@@ -1644,100 +2156,75 @@ export default function App() {
                 </motion.div>
               )}
 
-              {/* TAB 6: BRANDING, SIGNATURE (TTD) & CORPORATE SEAL (CAP) */}
+              {/* TAB 6: SIGNATURE (TTD) & CORPORATE SEAL (CAP) */}
               {activeTab === "signature" && (
                 <motion.div
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   className="space-y-6"
                 >
-                  {/* SECTION 1: LOGO PERUSAHAAN */}
-                  <div className="space-y-3.5 pb-5 border-b border-slate-100">
-                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 font-sans">
-                      <Globe className="w-4 h-4 text-indigo-500" />
-                      1. Brand Logo Header Utama
-                    </h3>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        { id: "default", label: "Logo Wave Default" },
-                        { id: "uploaded", label: "Unggah File Logo" }
-                      ].map(opt => (
-                        <button
-                          key={opt.id}
-                          onClick={() => handleSignaturePropertyChange("logoType", opt.id)}
-                          className={`py-2 px-3 text-xs font-semibold rounded-xl border text-center transition-all ${
-                            (po.logoType || "default") === opt.id
-                              ? "border-indigo-600 bg-indigo-50/50 text-indigo-700 font-bold shadow-sm"
-                              : "border-slate-200 hover:bg-slate-50 text-slate-600"
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
+                  {activeCompany ? (
+                    <div className="bg-indigo-600/5 border border-indigo-600/20 rounded-2xl p-4 flex flex-col gap-3">
+                       <div className="flex items-center gap-3">
+                         <div className="p-2 bg-indigo-600/10 rounded-xl">
+                           <Lock className="w-5 h-5 text-indigo-600" />
+                         </div>
+                         <div>
+                           <p className="text-xs font-black text-indigo-700 uppercase tracking-widest leading-none">Aset Profil Terkunci</p>
+                           <p className="text-[10px] text-slate-500 font-medium mt-1">Logo, Tanda Tangan, dan Stempel disinkronkan otomatis dari profil perusahaan {activeCompany.company_name}.</p>
+                         </div>
+                       </div>
+                       <button 
+                         onClick={() => handleCompanySelect(activeCompany.id!)}
+                         className="flex items-center justify-center gap-2 w-full py-2 bg-white border border-indigo-200 rounded-xl text-[10px] font-bold text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm"
+                       >
+                         <RefreshCw className="w-3 h-3" /> MUAT ULANG ASET DARI PROFIL
+                       </button>
                     </div>
-
-                    {(po.logoType || "default") === "uploaded" && (
-                      <div className="p-3 border border-dashed border-slate-200 rounded-xl bg-slate-50/50 space-y-3">
-                        <div className="flex items-center gap-3">
-                          {po.logoImage ? (
-                            <div className="relative shrink-0">
-                              <img src={po.logoImage} alt="Preview Logo" className="h-10 w-16 object-contain border border-slate-200 bg-white p-1 rounded" />
-                              <button 
-                                onClick={() => handleSignaturePropertyChange("logoImage", undefined)}
-                                className="absolute -top-1.5 -right-1.5 bg-red-500 text-white hover:bg-red-650 w-4.5 h-4.5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm"
-                                title="Hapus gambar"
-                              >
-                                &times;
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="h-10 w-16 bg-slate-100 border border-slate-200 rounded flex items-center justify-center text-[9px] text-slate-400 italic">No Logo</div>
-                          )}
-                          <div className="flex-1">
-                            <label className="inline-flex items-center gap-1.5 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold px-3 py-2 rounded-lg transition-colors shadow-sm">
-                              <Upload className="w-3.5 h-3.5" /> Pilih File Logo
-                              <input 
-                                type="file" 
-                                accept="image/*" 
-                                onChange={(e) => handleImageUpload(e, "logoImage")} 
-                                className="hidden" 
-                              />
-                            </label>
-                            <p className="text-[9px] text-slate-400 mt-1">Gunakan transparent PNG/JPEG (Maks 1.5MB)</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  ) : (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
+                       <AlertCircle className="w-5 h-5 text-amber-600" />
+                       <p className="text-[10px] text-amber-700 font-bold leading-tight">Pilih perusahaan issuer di Tab Informasi untuk mengaktifkan aset otomatis.</p>
+                    </div>
+                  )}
 
                   {/* SECTION 2: TANDA TANGAN (TTD) */}
                   <div className="space-y-3.5 pb-5 border-b border-slate-100">
-                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 font-sans">
-                      <User className="w-4 h-4 text-indigo-500" />
-                      2. Tanda Tangan (TTD) Direktur
-                    </h3>
-                    
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { id: "generated", label: "Cursive Otomatis" },
-                        { id: "uploaded", label: "Unggah TTD" },
-                        { id: "blank", label: "Kosongkan" }
-                      ].map(opt => (
-                        <button
-                          key={opt.id}
-                          onClick={() => handleSignaturePropertyChange("signatureType", opt.id)}
-                          className={`py-2 px-1 text-[11px] font-semibold rounded-xl border text-center transition-all ${
-                            (po.signatureType || "generated") === opt.id
-                              ? "border-indigo-600 bg-indigo-50/50 text-indigo-700 font-bold shadow-sm"
-                              : "border-slate-200 hover:bg-slate-50 text-slate-600"
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 font-sans">
+                        <User className="w-4 h-4 text-indigo-500" />
+                        1. Tanda Tangan (TTD) Direktur
+                      </h3>
                     </div>
+                    
+                    {!activeCompany ? (
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: "generated", label: "Cursive Otomatis" },
+                          { id: "uploaded", label: "Unggah TTD" },
+                          { id: "blank", label: "Kosongkan" }
+                        ].map(opt => (
+                          <button
+                            key={opt.id}
+                            onClick={() => handleSignaturePropertyChange("signatureType", opt.id)}
+                            className={`py-2 px-1 text-[11px] font-semibold rounded-xl border text-center transition-all ${
+                              (po.signatureType || "generated") === opt.id
+                                ? "border-indigo-600 bg-indigo-50/50 text-indigo-700 font-bold shadow-sm"
+                                : "border-slate-200 hover:bg-slate-50 text-slate-600"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 bg-indigo-50 text-indigo-700 px-3 py-2 rounded-xl border border-indigo-100 mb-2">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">Metode TTD Terkunci dari Profil Bisnis</span>
+                      </div>
+                    )}
 
-                    {(po.signatureType || "generated") === "generated" && (
+                    {(po.signatureType || "generated") === "generated" && !activeCompany && (
                       <div className="space-y-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
                         <div className="space-y-1">
                           <label className="text-[9px] text-slate-500 font-medium">Model Coretan Teks Nama TTD</label>
@@ -1781,28 +2268,38 @@ export default function App() {
                           {po.signatureImage ? (
                             <div className="relative shrink-0">
                               <img src={po.signatureImage} alt="Preview TTD" className="h-10 w-16 object-contain border border-slate-200 bg-white p-1 rounded mix-blend-multiply" />
-                              <button 
-                                onClick={() => handleSignaturePropertyChange("signatureImage", undefined)}
-                                className="absolute -top-1.5 -right-1.5 bg-red-505 text-white hover:bg-red-650 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold shadow-sm"
-                                title="Hapus gambar"
-                              >
-                                &times;
-                              </button>
+                              {!activeCompany && (
+                                <button 
+                                  onClick={() => handleSignaturePropertyChange("signatureImage", undefined)}
+                                  className="absolute -top-1.5 -right-1.5 bg-red-500 text-white hover:bg-red-600 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold shadow-sm"
+                                  title="Hapus gambar"
+                                >
+                                  &times;
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <div className="h-10 w-16 bg-slate-100 border border-slate-200 rounded flex items-center justify-center text-[9px] text-slate-400 italic">No TTD</div>
                           )}
                           <div className="flex-1">
-                            <label className="inline-flex items-center gap-1.5 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold px-3 py-2 rounded-lg transition-colors shadow-sm">
-                              <Upload className="w-3.5 h-3.5" /> Pilih File TTD
-                              <input 
-                                type="file" 
-                                accept="image/*" 
-                                onChange={(e) => handleImageUpload(e, "signatureImage")} 
-                                className="hidden" 
-                              />
-                            </label>
-                            <p className="text-[9px] text-slate-400 mt-1">Gunakan file transparent PNG (Maks 1.5MB)</p>
+                            {!activeCompany ? (
+                              <>
+                                <label className="inline-flex items-center gap-1.5 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold px-3 py-2 rounded-lg transition-colors shadow-sm">
+                                  <Upload className="w-3.5 h-3.5" /> Pilih File TTD
+                                  <input 
+                                    type="file" 
+                                    accept="image/*" 
+                                    onChange={(e) => handleImageUpload(e, "signatureImage")} 
+                                    className="hidden" 
+                                  />
+                                </label>
+                                <p className="text-[9px] text-slate-400 mt-1">Gunakan file transparent PNG (Maks 1.5MB)</p>
+                              </>
+                            ) : po.signatureImage && (
+                              <p className="text-[10px] text-indigo-700 font-bold bg-white p-2 rounded-xl border border-indigo-100 shadow-sm flex items-center gap-2">
+                                <CheckCircle className="w-3.5 h-3.5" /> Tanda Tangan Aktif dari Profil
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1813,30 +2310,37 @@ export default function App() {
                   <div className="space-y-3.5">
                     <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 font-sans">
                       <PenTool className="w-4 h-4 text-indigo-500" />
-                      3. Stempel / Cap Resmi Perusahaan
+                      2. Stempel / Cap Resmi Perusahaan
                     </h3>
 
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { id: "generated", label: "Simulasi Bulat" },
-                        { id: "uploaded", label: "Unggah Cap" },
-                        { id: "blank", label: "Kosongkan" }
-                      ].map(opt => (
-                        <button
-                          key={opt.id}
-                          onClick={() => handleSignaturePropertyChange("stampType", opt.id)}
-                          className={`py-2 px-1 text-[11px] font-semibold rounded-xl border text-center transition-all ${
-                            (po.stampType || "generated") === opt.id
-                              ? "border-indigo-600 bg-indigo-50/50 text-indigo-700 font-bold shadow-sm"
-                              : "border-slate-200 hover:bg-slate-50 text-slate-600"
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
+                    {!activeCompany ? (
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: "generated", label: "Simulasi Bulat" },
+                          { id: "uploaded", label: "Unggah Cap" },
+                          { id: "blank", label: "Kosongkan" }
+                        ].map(opt => (
+                          <button
+                            key={opt.id}
+                            onClick={() => handleSignaturePropertyChange("stampType", opt.id)}
+                            className={`py-2 px-1 text-[11px] font-semibold rounded-xl border text-center transition-all ${
+                              (po.stampType || "generated") === opt.id
+                                ? "border-indigo-600 bg-indigo-50/50 text-indigo-700 font-bold shadow-sm"
+                                : "border-slate-200 hover:bg-slate-50 text-slate-600"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 bg-indigo-50 text-indigo-700 px-3 py-2 rounded-xl border border-indigo-100 mb-2">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">Aset Stempel Terkunci dari Profil Bisnis</span>
+                      </div>
+                    )}
 
-                    {(po.stampType || "generated") === "generated" && (
+                    {(po.stampType || "generated") === "generated" && !activeCompany && (
                       <div className="space-y-3 bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs">
                         <div className="space-y-1">
                           <label className="text-[9px] text-slate-500 font-medium font-sans">Nama Perusahaan Ring (Maks 42 Huruf)</label>
@@ -1900,28 +2404,38 @@ export default function App() {
                           {po.stampImage ? (
                             <div className="relative shrink-0">
                               <img src={po.stampImage} alt="Preview Cap" className="h-10 w-16 object-contain border border-slate-200 bg-white p-1 rounded mix-blend-multiply" />
-                              <button 
-                                onClick={() => handleSignaturePropertyChange("stampImage", undefined)}
-                                className="absolute -top-1.5 -right-1.5 bg-red-550 text-white hover:bg-red-650 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold shadow-sm"
-                                title="Hapus gambar"
-                              >
-                                &times;
-                              </button>
+                              {!activeCompany && (
+                                <button 
+                                  onClick={() => handleSignaturePropertyChange("stampImage", undefined)}
+                                  className="absolute -top-1.5 -right-1.5 bg-red-500 text-white hover:bg-red-650 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold shadow-sm"
+                                  title="Hapus gambar"
+                                >
+                                  &times;
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <div className="h-10 w-16 bg-slate-100 border border-slate-200 rounded flex items-center justify-center text-[9px] text-slate-400 italic">No Cap</div>
                           )}
                           <div className="flex-1">
-                            <label className="inline-flex items-center gap-1.5 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold px-3 py-2 rounded-lg transition-colors shadow-sm">
-                              <Upload className="w-3.5 h-3.5" /> Pilih File Cap
-                              <input 
-                                type="file" 
-                                accept="image/*" 
-                                onChange={(e) => handleImageUpload(e, "stampImage")} 
-                                className="hidden" 
-                              />
-                            </label>
-                            <p className="text-[9px] text-slate-400 mt-1">Gunakan transparent PNG (Maks 1.5MB)</p>
+                            {!activeCompany ? (
+                              <>
+                                <label className="inline-flex items-center gap-1.5 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold px-3 py-2 rounded-lg transition-colors shadow-sm">
+                                  <Upload className="w-3.5 h-3.5" /> Pilih File Cap
+                                  <input 
+                                    type="file" 
+                                    accept="image/*" 
+                                    onChange={(e) => handleImageUpload(e, "stampImage")} 
+                                    className="hidden" 
+                                  />
+                                </label>
+                                <p className="text-[9px] text-slate-400 mt-1">Gunakan transparent PNG (Maks 1.5MB)</p>
+                              </>
+                            ) : po.stampImage && (
+                              <p className="text-[10px] text-indigo-700 font-bold bg-white p-2 rounded-xl border border-indigo-100 shadow-sm flex items-center gap-2">
+                                <CheckCircle className="w-3.5 h-3.5" /> Stempel Aktif dari Profil
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1948,18 +2462,18 @@ export default function App() {
                         {/* Stamp Size selection slider */}
                         <div className="space-y-1 pt-2.5 border-t border-slate-200/60 font-sans">
                           <div className="flex justify-between text-[9px] text-slate-500 font-medium">
-                            <span>Ukuran Cap / Stempel (Diameter)</span>
-                            <span className="font-mono text-[10px] font-bold text-slate-800">{po.stampSize || 90}px</span>
+                            <span>Ukuran Cap / Stempel (Standard 145px)</span>
+                            <span className="font-mono text-[10px] font-bold text-slate-800">{po.stampSize || 145}px</span>
                           </div>
                           <input 
                             type="range" 
-                            min="60" 
-                            max="140" 
-                            value={po.stampSize || 90}
-                            onChange={(e) => handleSignaturePropertyChange("stampSize", parseInt(e.target.value) || 90)}
+                            min="80" 
+                            max="200" 
+                            value={po.stampSize || 145}
+                            onChange={(e) => handleSignaturePropertyChange("stampSize", parseInt(e.target.value) || 145)}
                             className="w-full accent-indigo-600 cursor-ew-resize h-1 bg-slate-200 rounded-lg appearance-none"
                           />
-                          <p className="text-[8px] text-slate-400 mt-0.5 font-sans">Sesuaikan luas stempel agar serasi di atas tanda tangan.</p>
+                          <p className="text-[8px] text-slate-400 mt-0.5 font-sans">Ukuran disarankan 145px untuk proporsi cap resmi.</p>
                         </div>
                       </div>
                     )}
@@ -1974,19 +2488,76 @@ export default function App() {
         </div>
 
         {/* Right pane: Visual High fidelity Screen Graphic (Lg: 7 columns) */}
-        <div className="lg:col-span-7 bg-slate-200/50 rounded-2xl border border-slate-300/60 p-3 sm:p-6 flex flex-col items-center gap-6 overflow-x-auto w-full max-w-full min-h-[500px] scrollbar-thin">
-          
-          {/* Mobile indicator for document size */}
-          <div className="w-full max-w-[794px] flex items-center justify-between px-3.5 py-2.5 bg-indigo-50 border border-indigo-100/60 rounded-xl text-indigo-950 text-[11px] font-semibold leading-relaxed shadow-xs shrink-0 select-none">
-            <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"></span>
-              <span><strong>Layout Ukuran Asli (A4)</strong>: Ukuran dokumen dikunci demi akurasi cetak & PDF sempurna.</span>
-            </span>
-            <span className="hidden sm:inline bg-indigo-100 text-indigo-900 font-extrabold px-2 py-0.5 rounded text-[9px] uppercase tracking-wider">Akurasi 100%</span>
-          </div>
+        <div className={`lg:col-span-7 min-w-0 bg-slate-200/50 rounded-2xl border border-slate-300/60 p-3 sm:p-6 overflow-x-auto w-full max-w-full min-h-[500px] scrollbar-thin ${viewMode === 'preview' ? 'block' : 'hidden lg:block'}`}>
+          <div className="flex flex-col items-start sm:items-center min-w-min gap-6 origin-top py-4">
+            {/* Mobile indicator for document size */}
+            <div className="w-[794px] max-w-none flex items-center justify-between px-3.5 py-2.5 bg-indigo-50 border border-indigo-100/60 rounded-xl text-indigo-950 text-[11px] font-semibold leading-relaxed shadow-xs shrink-0 select-none">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                <span><strong>Layout Ukuran Asli (A4)</strong>: Ukuran dokumen dikunci demi akurasi cetak & PDF sempurna.</span>
+              </span>
+              <span className="hidden sm:inline bg-indigo-100 text-indigo-900 font-extrabold px-2 py-0.5 rounded text-[9px] uppercase tracking-wider">Akurasi 100%</span>
+            </div>
 
-          {/* Download wrapper containing Page 1 (and optionally Page 2) */}
-          <div id="po-download-wrapper" className={`w-[794px] shrink-0 flex flex-col items-center ${isExportingPDF ? 'gap-0' : 'gap-6'}`}>
+            {/* Active Zoom Controller */}
+            <div className="w-[794px] max-w-none flex items-center justify-between px-4 py-2.5 bg-white border border-slate-200 shadow-xs rounded-xl text-slate-800 text-[11px] font-semibold leading-none shrink-0 select-none">
+              <span className="flex items-center gap-2">
+                <Settings size={14} className="text-slate-400" />
+                <span>Skala Pratinjau Tampilan: <strong className="text-indigo-600">{previewZoom}%</strong></span>
+              </span>
+              <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(prev => Math.max(50, prev - 10))}
+                  disabled={previewZoom <= 50}
+                  className="px-2.5 py-1.5 bg-white hover:bg-slate-100 disabled:opacity-50 text-slate-700 rounded-md text-[10px] font-black border border-slate-200/60 shadow-xxs transition-all cursor-pointer select-none"
+                >
+                  DIPERKECIL (-10%)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(80)}
+                  className={`px-3 py-1.5 rounded-md text-[10px] font-black border transition-all cursor-pointer select-none ${
+                    previewZoom === 80 
+                      ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm shadow-indigo-600/10' 
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200/60'
+                  }`}
+                >
+                  MUAT PENUH (80%)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(100)}
+                  className={`px-3 py-1.5 rounded-md text-[10px] font-black border transition-all cursor-pointer select-none ${
+                    previewZoom === 100
+                      ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm shadow-indigo-600/10'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200/60'
+                  }`}
+                >
+                  ASLI (100%)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(prev => Math.min(150, prev + 10))}
+                  disabled={previewZoom >= 150}
+                  className="px-2.5 py-1.5 bg-white hover:bg-slate-100 disabled:opacity-50 text-slate-700 rounded-md text-[10px] font-black border border-slate-200/60 shadow-xxs transition-all cursor-pointer select-none"
+                >
+                  DIPERBESAR (+10%)
+                </button>
+              </div>
+            </div>
+
+            {/* Download wrapper containing Page 1 (and optionally Page 2) */}
+            <div 
+              id="po-download-wrapper" 
+              className={`w-[794px] shrink-0 flex flex-col items-center ${isExportingPDF ? 'gap-0' : 'gap-6'}`}
+              style={isExportingPDF ? {} : {
+                zoom: `${previewZoom}%`,
+                WebkitZoom: `${previewZoom}%`,
+                MozTransform: `scale(${previewZoom / 100})`,
+                MozTransformOrigin: 'top center'
+              }}
+            >
 
             {/* Live Document Canvas */}
             <div 
@@ -2000,7 +2571,10 @@ export default function App() {
             
             <div className="space-y-6">
               {/* BRAND HEADER BAR */}
-              <div className="flex justify-between items-center border-b border-indigo-50/50 pb-6">
+              <div 
+                className="flex justify-between items-center border-b pb-6"
+                style={{ borderBottomColor: theme.isCustom ? theme.hex + '33' : '' }}
+              >
                 
                 {/* Brand Visual logo matching indilus / kustom with brand name text */}
                 <div className="flex items-center gap-4">
@@ -2013,16 +2587,19 @@ export default function App() {
                       />
                     ) : (
                       <div className="flex items-center gap-4">
-                        <div className="relative shrink-0 flex items-center justify-center p-2 rounded-xl bg-slate-50 border border-slate-100">
+                        <div 
+                          className="relative shrink-0 flex items-center justify-center p-2 rounded-xl bg-slate-50 border"
+                          style={{ borderColor: theme.isCustom ? theme.hex + '33' : '' }}
+                        >
                           <svg className="w-14 h-14" viewBox="0 0 100 50">
                             <path 
                               d="M25,25 C25,35 35,42 45,35 C55,28 65,15 75,25 C85,35 75,42 65,35 C55,28 45,15 25,25 Z" 
                               fill="none" 
-                              stroke="#0F5CA3" 
+                              stroke={theme.isCustom ? theme.hex : "#0F5CA3"} 
                               strokeWidth="8" 
                               strokeLinecap="round"
                             />
-                            <circle cx="21" cy="24" r="5" fill="#38BDF8" />
+                            <circle cx="21" cy="24" r="5" fill={theme.isCustom ? theme.hex : "#38BDF8"} />
                           </svg>
                         </div>
                         <div className="flex flex-col">
@@ -2032,7 +2609,10 @@ export default function App() {
                           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-none mt-0.5">
                             {po.company.subTitle || "INFINITAS DIGITAL SOLUSI"}
                           </span>
-                          <span className="text-[9px] text-[#0F5CA3] font-medium leading-none mt-1.5 opacity-90">
+                          <span 
+                            className="text-[9px] font-medium leading-none mt-1.5 opacity-90"
+                            style={{ color: theme.isCustom ? theme.hex : '#0F5CA3' }}
+                          >
                             Standard Quality & Digital Integration Vendor
                           </span>
                         </div>
@@ -2043,7 +2623,10 @@ export default function App() {
 
                 {/* Right text details */}
                 <div className="text-right">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#1E40AF] block mb-1">
+                  <span 
+                    className="text-xs font-bold uppercase tracking-wider block mb-1"
+                    style={{ color: theme.isCustom ? theme.hex : '#1E40AF' }}
+                  >
                     {po.documentType === 'invoice' ? 'INVOICE' : po.documentType === 'delivery_order' ? 'DELIVERY ORDER' : 'Purchase Order'}
                   </span>
                   
@@ -2051,7 +2634,16 @@ export default function App() {
                     <div className="space-y-0.5 text-xs text-slate-700 pt-1">
                       <div className="flex justify-end gap-2 items-center">
                         <span className="font-semibold text-slate-500 uppercase text-[9px] tracking-wider">No. Invoice</span>
-                        <span className="font-black font-mono bg-indigo-50 px-1.5 py-0.5 rounded text-indigo-900 border border-indigo-100">{po.metadata.invoiceNumber || "-"}</span>
+                        <span 
+                          className="font-black font-mono px-1.5 py-0.5 rounded border"
+                          style={{ 
+                            backgroundColor: theme.isCustom ? theme.hex + '11' : '', 
+                            color: theme.isCustom ? theme.hex : '',
+                            borderColor: theme.isCustom ? theme.hex + '33' : ''
+                          }}
+                        >
+                          {po.metadata.invoiceNumber || "-"}
+                        </span>
                       </div>
                       <div className="flex justify-end gap-2 items-center">
                         <span className="font-semibold text-slate-500 uppercase text-[9px] tracking-wider">No. PO</span>
@@ -2070,7 +2662,16 @@ export default function App() {
                     <div className="space-y-0.5 text-xs text-slate-700 pt-1">
                       <div className="flex justify-end gap-2 items-center">
                         <span className="font-semibold text-slate-500 uppercase text-[9px] tracking-wider">No. DO</span>
-                        <span className="font-black font-mono bg-indigo-50 px-1.5 py-0.5 rounded text-indigo-900 border border-indigo-100">{po.metadata.deliveryOrderNumber || "-"}</span>
+                        <span 
+                          className="font-black font-mono px-1.5 py-0.5 rounded border"
+                          style={{ 
+                            backgroundColor: theme.isCustom ? theme.hex + '11' : '', 
+                            color: theme.isCustom ? theme.hex : '',
+                            borderColor: theme.isCustom ? theme.hex + '33' : ''
+                          }}
+                        >
+                          {po.metadata.deliveryOrderNumber || "-"}
+                        </span>
                       </div>
                       <div className="flex justify-end gap-2 items-center">
                         <span className="font-semibold text-slate-500 uppercase text-[9px] tracking-wider">No. PO</span>
@@ -2097,40 +2698,71 @@ export default function App() {
               {/* CARD INFO SEGMENTS */}
               <div className="flex flex-row gap-4 w-full justify-between items-stretch">
                 
-                {/* VENDOR BOX CARDS */}
-                <div className="w-[48%] bg-sky-50/30 border border-slate-200/80 rounded-xl overflow-hidden shadow-sm flex flex-col">
-                  <div className="bg-sky-50 border-b border-slate-200 px-4 py-2.5 flex items-center justify-start gap-1.5 text-[#0284C7] font-black text-xs tracking-wide">
-                    <CheckCircle className="w-[18px] h-[18px] flex-shrink-0 stroke-[2.5]" /> <span>{po.documentType === 'invoice' || po.documentType === 'delivery_order' ? 'FROM' : 'VENDOR'}</span>
+                {/* FROM BOX CARDS */}
+                <div 
+                  className="w-[48%] border rounded-xl overflow-hidden shadow-sm flex flex-col"
+                  style={{ 
+                    backgroundColor: theme.isCustom ? theme.hex + '05' : '',
+                    borderColor: theme.isCustom ? theme.hex + '22' : '#e2e8f0' 
+                  }}
+                >
+                  <div 
+                    className="px-4 py-2.5 flex items-center justify-start gap-1.5 font-black text-xs tracking-wide border-b"
+                    style={{ 
+                      backgroundColor: theme.isCustom ? theme.hex + '0f' : '', 
+                      color: theme.isCustom ? theme.hex : '',
+                      borderColor: theme.isCustom ? theme.hex + '22' : '#e2e8f0'
+                    }}
+                  >
+                    <Building className="w-4 h-4 flex-shrink-0 stroke-[2.5]" /> <span>FROM</span>
                   </div>
                   <div className="p-4 space-y-2 flex-grow min-h-[140px]">
                     <h4 className="text-xs font-bold text-slate-900 leading-tight">
-                      {po.vendor.name || "[Nama Vendor Kosong]"}
+                      {po.company.name || "[Nama Unit Bisnis Kosong]"}
                     </h4>
                     <p className="text-[11px] text-slate-600 leading-relaxed font-normal">
-                      {po.vendor.address || "[Alamat Vendor Kosong]"}
+                      {po.company.subTitle || "[Alamat Bisnis Kosong]"}
                     </p>
-                    <div className="pt-1.5 text-[11px] text-slate-500 space-y-0.5">
-                      <p><span className="font-semibold text-slate-700">Attn:</span> {po.vendor.attn || "-"}</p>
-                      <p className="flex items-center gap-1"><span className="font-semibold text-slate-700">Phone:</span> {po.vendor.phone || "-"}</p>
+                    <div className="pt-1.5 text-[11px] text-slate-500 space-y-0.5 border-t border-slate-100/50 mt-1">
+                      {po.company.npwp && (
+                        <p className="flex items-center gap-1"><span className="font-semibold text-slate-700">NPWP:</span> {po.company.npwp}</p>
+                      )}
+                      <p><span className="font-semibold text-slate-700">Attn:</span> {po.company.attn || "-"}</p>
+                      <p className="flex items-center gap-1"><span className="font-semibold text-slate-700">Phone:</span> {po.company.phone || "-"}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* SENT TO BOX CARDS */}
-                <div className="w-[48%] bg-indigo-900/5 text-slate-900 hover:shadow transition-shadow border border-indigo-200/80 rounded-xl overflow-hidden shadow-sm flex flex-col">
-                  <div className="bg-[#1E40AF] text-white border-b border-indigo-900/20 px-4 py-2.5 flex items-center justify-start gap-1.5 font-black text-xs tracking-wide">
-                    <CheckCircle className="w-[18px] h-[18px] text-emerald-300 flex-shrink-0 stroke-[2.5]" /> <span>{po.documentType === 'invoice' ? 'BILLED TO' : 'SENT TO'}</span>
+                <div 
+                  className="w-[48%] text-slate-900 hover:shadow transition-shadow border rounded-xl overflow-hidden shadow-sm flex flex-col"
+                  style={{ 
+                    backgroundColor: theme.isCustom ? theme.hex + '05' : '',
+                    borderColor: theme.isCustom ? theme.hex + '22' : '' 
+                  }}
+                >
+                  <div 
+                    className="text-white border-b px-4 py-2.5 flex items-center justify-start gap-1.5 font-black text-xs tracking-wide cursor-default"
+                    style={{ 
+                      backgroundColor: theme.isCustom ? theme.hex : '',
+                      borderColor: theme.isCustom ? theme.hex + '33' : ''
+                    }}
+                  >
+                    <User className="w-[18px] h-[18px] text-white/80 flex-shrink-0 stroke-[2.5]" /> <span>{po.documentType === 'invoice' ? 'BILLED TO' : 'SENT TO'}</span>
                   </div>
                   <div className="p-4 space-y-2 flex-grow min-h-[140px]">
                     <h4 className="text-xs font-bold text-slate-900 leading-tight">
-                      {po.shipping.name || "[Nama Penerima Kosong]"}
+                      {po.vendor.name || "[Nama Penerima Kosong]"}
                     </h4>
                     <p className="text-[11px] text-slate-600 leading-relaxed font-normal">
-                      {po.shipping.address || "[Alamat Penerima Kosong]"}
+                      {po.vendor.address || "[Alamat Penerima Kosong]"}
                     </p>
                     <div className="pt-1.5 text-[11px] text-slate-500 space-y-0.5">
-                      <p><span className="font-semibold text-slate-700">Attn:</span> {po.shipping.attn || "-"}</p>
-                      <p className="flex items-center gap-1"><span className="font-semibold text-slate-700">Phone:</span> {po.shipping.phone || "-"}</p>
+                      {po.vendor.npwp && (
+                        <p className="flex items-center gap-1"><span className="font-semibold text-slate-700">NPWP:</span> {po.vendor.npwp}</p>
+                      )}
+                      <p><span className="font-semibold text-slate-700">Attn:</span> {po.vendor.attn || "-"}</p>
+                      <p className="flex items-center gap-1"><span className="font-semibold text-slate-700">Phone:</span> {po.vendor.phone || "-"}</p>
                     </div>
                   </div>
                 </div>
@@ -2169,7 +2801,10 @@ export default function App() {
               <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-50 text-slate-400 border-b border-slate-200 font-bold tracking-wider text-[10px]">
+                    <tr 
+                      className="text-slate-400 border-b border-slate-200 font-bold tracking-wider text-[10px]"
+                      style={{ backgroundColor: theme.isCustom ? theme.hex + '0a' : '' }}
+                    >
                       <th className="py-2.5 px-4 font-bold text-slate-500 uppercase">Description</th>
                       <th className="py-2.5 px-3 font-bold text-slate-500 uppercase text-right w-[80px]">Qty</th>
                       <th className="py-2.5 px-3 font-bold text-slate-500 uppercase text-center w-[80px]">Unit</th>
@@ -2227,8 +2862,16 @@ export default function App() {
                     )}
 
                     <div className="border-t border-slate-200 my-1 pt-1.5 flex justify-between items-center font-bold text-slate-800">
-                      <span className="text-[10px] tracking-wide uppercase font-extrabold text-[#0F5CA3]">Total Amount:</span>
-                      <span className="font-mono text-lg text-[#1E40AF]">
+                      <span 
+                        className="text-[10px] tracking-wide uppercase font-extrabold"
+                        style={{ color: theme.isCustom ? theme.hex : '' }}
+                      >
+                        Total Amount:
+                      </span>
+                      <span 
+                        className="font-mono text-lg"
+                        style={{ color: theme.isCustom ? theme.hex : '' }}
+                      >
                         {formatIDR(calculateTotal())}
                       </span>
                     </div>
@@ -2260,12 +2903,12 @@ export default function App() {
 
                 {/* Signee */}
                 <div className="w-full flex justify-between gap-4 mt-6">
-                  {/* Column 1: BUYER */}
+                  {/* Column 1: RECIPIENT */}
                   <div className="flex flex-col items-center text-center w-[30%]">
                     {/* Entity Name Header - fixed consistent height */}
                     <div className="h-10 flex items-center justify-center w-full">
-                      <span className="text-[10px] font-bold text-slate-800 uppercase tracking-wide leading-tight">
-                        {po.shipping.name || "BUYER"}
+                      <span className="text-[10px] font-bold text-slate-800 uppercase tracking-wide leading-tight px-2">
+                        {po.vendor.name || (po.documentType === 'po' ? 'SUPPLIER' : 'CLIENT')}
                       </span>
                     </div>
                     
@@ -2312,12 +2955,15 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Column 3: PT INFINITAS DIGITAL SOLUSI */}
+                  {/* Column 3: ISSUER */}
                   <div className="flex flex-col items-center text-center w-[30%]">
                     {/* Entity Name Header - fixed consistent height */}
                     <div className="h-10 flex items-center justify-center w-full">
-                      <span className="text-[10px] font-bold text-[#1E40AF] uppercase tracking-wide leading-tight">
-                        {po.signee.company || po.vendor.name || "COMPANY"}
+                      <span 
+                        className="text-[10px] font-bold uppercase tracking-wide leading-tight"
+                        style={{ color: theme.isCustom ? theme.hex : '#1E40AF' }}
+                      >
+                        {po.company.name || "ISSUER"}
                       </span>
                     </div>
                     
@@ -2326,13 +2972,11 @@ export default function App() {
                       <div className="absolute z-10 flex items-center justify-center">
                         {(po.signatureType || "generated") === "generated" ? (
                           <span 
-                            className={`text-2xl text-[#1E40AF] select-none text-center ${
-                              po.signatureFont === "alex" 
-                                ? "font-[--font-alex]" 
-                                : po.signatureFont === "caveat" 
-                                  ? "font-[--font-caveat]" 
-                                  : "font-[--font-satisfy]"
-                            }`}
+                            className="text-2xl select-none text-center"
+                            style={{ 
+                              color: theme.isCustom ? theme.hex : '#1E40AF',
+                              fontFamily: po.signatureFont === "alex" ? "var(--font-alex)" : po.signatureFont === "caveat" ? "var(--font-caveat)" : "var(--font-satisfy)"
+                            }}
                           >
                             {po.signatureText || po.signee.name || "Aditia Alamsyah"}
                           </span>
@@ -2355,7 +2999,7 @@ export default function App() {
                             subText={po.stampTextSub ?? "APPROVED"} 
                             color={po.stampColor ?? "#059669"} 
                             angle={po.stampAngle ?? -6} 
-                            size={po.stampSize ? po.stampSize * 0.72 : 72}
+                            size={po.stampSize ? po.stampSize * 0.72 : 104}
                           />
                         ) : (
                           po.stampImage && (
@@ -2365,8 +3009,8 @@ export default function App() {
                               className="select-none mix-blend-multiply"
                               style={{ 
                                 transform: `rotate(${po.stampAngle ?? -6}deg)`,
-                                maxWidth: `${po.stampSize ? po.stampSize * 0.72 : 80}px`,
-                                maxHeight: `${po.stampSize ? po.stampSize * 0.72 : 80}px`,
+                                maxWidth: `${po.stampSize ? po.stampSize * 0.72 : 104}px`,
+                                maxHeight: `${po.stampSize ? po.stampSize * 0.72 : 104}px`,
                                 width: 'auto',
                                 height: 'auto'
                               }}
@@ -2430,11 +3074,21 @@ export default function App() {
                   )}
                 </div>
 
+                {/* QR Code Verification */}
+                {id && (
+                <div className="w-[15%] flex justify-center items-end h-full min-h-[160px] pb-4">
+                  <div className="flex flex-col items-center">
+                    <QRCodeSVG value={`https://adm.indilus.co.id/verify/${id}`} size={60} level="M" />
+                    <span className="text-[7px] text-slate-400 mt-1 uppercase text-center leading-tight">Verify<br/>Document</span>
+                  </div>
+                </div>
+                )}
+
                 {/* Signee */}
-                <div className="w-[45%] text-center flex flex-col justify-between h-full min-h-[160px]">
+                <div className="w-[30%] text-center flex flex-col justify-between h-full min-h-[160px]">
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 tracking-wider block uppercase">Authorized Signature</span>
-                    <span className="text-xs font-bold text-slate-800 block mt-1 uppercase">{po.signee.company || "PT INFINITAS DIGITAL SOLUSI"}</span>
+                    <span className="text-xs font-bold text-slate-800 block mt-1 uppercase">{po.company.name || "ISSUER"}</span>
                   </div>
 
                   {/* Overlapping Realistic Signature & Stamp Container */}
@@ -2475,7 +3129,7 @@ export default function App() {
                             subText={po.stampTextSub ?? "APPROVED"} 
                             color={po.stampColor ?? "#0F5CA3"} 
                             angle={po.stampAngle ?? -6} 
-                            size={po.stampSize ?? 90}
+                            size={po.stampSize ?? 145}
                           />
                         ) : (
                           po.stampImage && (
@@ -2485,8 +3139,8 @@ export default function App() {
                               className="select-none mix-blend-multiply"
                               style={{ 
                                 transform: `rotate(${po.stampAngle ?? -6}deg)`,
-                                maxWidth: `${po.stampSize ?? 120}px`,
-                                maxHeight: `${po.stampSize ?? 120}px`,
+                                maxWidth: `${po.stampSize ?? 145}px`,
+                                maxHeight: `${po.stampSize ?? 145}px`,
                                 width: 'auto',
                                 height: 'auto'
                               }}
@@ -2630,6 +3284,8 @@ export default function App() {
               </div>
             </div>
           )}
+
+          </div>
 
           </div>
 
